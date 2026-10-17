@@ -1,5 +1,6 @@
 import threading
 import time
+import psutil
 from scapy.all import (
     sniff,
     get_if_list,

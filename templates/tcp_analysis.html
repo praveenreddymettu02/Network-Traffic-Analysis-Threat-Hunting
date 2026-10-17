@@ -1,0 +1,104 @@
+{% extends "base.html" %}
+{% block content %}
+<h1 class="mb-4" style="font-weight: 700; color: #f8fafc;">
+    <i class="fas fa-network-wired me-2" style="color: #3b82f6;"></i>TCP Session Analysis
+</h1>
+
+<!-- ============================================ -->
+<!-- 📊 TCP STATS CARDS -->
+<!-- ============================================ -->
+<div class="row g-3 mb-4">
+    <div class="col-md-3 col-sm-6">
+        <div class="stat-card card-blue" style="padding: 12px 15px; position: relative;">
+            <i class="fas fa-users" style="font-size: 1.5rem; opacity: 0.2; position: absolute; right: 12px; top: 12px;"></i>
+            <div class="card-title" style="font-size: 0.55rem; text-transform: uppercase; letter-spacing: 0.5px;">Total Sessions</div>
+            <div class="card-value" id="tcp-total" style="font-size: 1.4rem; font-weight: 700;">0</div>
+        </div>
+    </div>
+    <div class="col-md-3 col-sm-6">
+        <div class="stat-card card-green" style="padding: 12px 15px; position: relative;">
+            <i class="fas fa-check-circle" style="font-size: 1.5rem; opacity: 0.2; position: absolute; right: 12px; top: 12px;"></i>
+            <div class="card-title" style="font-size: 0.55rem; text-transform: uppercase; letter-spacing: 0.5px;">Active Sessions</div>
+            <div class="card-value" id="tcp-active" style="font-size: 1.4rem; font-weight: 700;">0</div>
+        </div>
+    </div>
+    <div class="col-md-3 col-sm-6">
+        <div class="stat-card card-pink" style="padding: 12px 15px; position: relative;">
+            <i class="fas fa-check-double" style="font-size: 1.5rem; opacity: 0.2; position: absolute; right: 12px; top: 12px;"></i>
+            <div class="card-title" style="font-size: 0.55rem; text-transform: uppercase; letter-spacing: 0.5px;">Closed Sessions</div>
+            <div class="card-value" id="tcp-closed" style="font-size: 1.4rem; font-weight: 700;">0</div>
+        </div>
+    </div>
+    <div class="col-md-3 col-sm-6">
+        <div class="stat-card card-orange" style="padding: 12px 15px; position: relative;">
+            <i class="fas fa-exclamation-triangle" style="font-size: 1.5rem; opacity: 0.2; position: absolute; right: 12px; top: 12px;"></i>
+            <div class="card-title" style="font-size: 0.55rem; text-transform: uppercase; letter-spacing: 0.5px;">Reset Sessions</div>
+            <div class="card-value" id="tcp-reset" style="font-size: 1.4rem; font-weight: 700;">0</div>
+        </div>
+    </div>
+</div>
+
+<!-- ============================================ -->
+<!-- 📋 TCP SESSIONS TABLE -->
+<!-- ============================================ -->
+<div class="row">
+    <div class="col-12">
+        <div class="card card-custom">
+            <div class="card-header">
+                <i class="fas fa-table me-2" style="color: #3b82f6;"></i>TCP Sessions
+                <span class="badge bg-info ms-2" id="session-count-badge">0</span>
+                <button class="btn btn-sm btn-outline-primary float-end" onclick="refreshSessions()">
+                    <i class="fas fa-sync"></i> Refresh
+                </button>
+            </div>
+            <div class="card-body p-0">
+                <div class="table-responsive" style="max-height: 600px; overflow-y: auto;">
+                    <table class="table table-theme mb-0" style="font-size: 0.75rem;">
+                        <thead>
+                            <tr>
+                                <th>#</th>
+                                <th>Source IP</th>
+                                <th>Source Port</th>
+                                <th>Destination IP</th>
+                                <th>Destination Port</th>
+                                <th>SYN</th>
+                                <th>ACK</th>
+                                <th>FIN</th>
+                                <th>RST</th>
+                                <th>Window</th>
+                                <th>Packets</th>
+                                <th>Bytes</th>
+                                <th>Duration</th>
+                                <th>Status</th>
+                            </tr>
+                        </thead>
+                        <tbody id="tcp-sessions-body">
+                            <tr><td colspan="14" class="text-center text-muted">No TCP sessions yet</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- ============================================ -->
+<!-- 🔄 LIVE STATUS -->
+<!-- ============================================ -->
+<div class="row mt-3">
+    <div class="col-12">
+        <div class="card card-custom">
+            <div class="card-body py-2 text-center text-muted" style="font-size: 0.8rem;">
+                <i class="fas fa-sync fa-spin me-2"></i> 
+                Auto-refreshing every 5 seconds
+                <span class="badge bg-success ms-2" id="tcp-live-status">🟢 Live</span>
+                <span class="badge bg-info ms-2" id="tcp-update-time">Just now</span>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('static', filename='js/tcp.js') }}"></script>
+{% endblock %}

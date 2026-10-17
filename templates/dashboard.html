@@ -1,0 +1,415 @@
+{% extends "base.html" %}
+
+{% block content %}
+<!-- Professional Dashboard -->
+<div class="container-fluid px-0">
+
+    <!-- ============================================ -->
+    <!-- 🔝 TOP STATS ROW - 6 Columns -->
+    <!-- ============================================ -->
+    <!-- ============================================ -->
+    <!-- 🔝 TOP STATS ROW - 6 Columns -->
+    <!-- ============================================ -->
+    <div class="row g-2 mb-3">
+        <div class="col-md-2 col-6">
+            <div class="stat-card card-blue">
+                <i class="fas fa-layer-group position-absolute end-0 top-0 m-3" style="font-size: 1.5rem; opacity: 0.15;"></i>
+                <div class="card-title">Total Packets</div>
+                <div class="card-value" id="total-packets">0</div>
+            </div>
+        </div>
+        <div class="col-md-2 col-6">
+            <div class="stat-card card-purple">
+                <i class="fas fa-tachometer-alt position-absolute end-0 top-0 m-3" style="font-size: 1.5rem; opacity: 0.15;"></i>
+                <div class="card-title">Packets / Sec</div>
+                <div class="card-value" id="pps-meter">0</div>
+            </div>
+        </div>
+        <div class="col-md-2 col-6">
+            <div class="stat-card card-pink">
+                <i class="fas fa-wave-square position-absolute end-0 top-0 m-3" style="font-size: 1.5rem; opacity: 0.15;"></i>
+                <div class="card-title">Bandwidth</div>
+                <div class="card-value" id="bandwidth-val">0 B/s</div>
+            </div>
+        </div>
+        <div class="col-md-2 col-6">
+            <div class="stat-card card-teal">
+                <i class="fas fa-microchip position-absolute end-0 top-0 m-3" style="font-size: 1.5rem; opacity: 0.15;"></i>
+                <div class="card-title">CPU Usage</div>
+                <div class="card-value" id="cpu-usage">0%</div>
+            </div>
+        </div>
+        <div class="col-md-2 col-6">
+            <div class="stat-card card-orange">
+                <i class="fas fa-memory position-absolute end-0 top-0 m-3" style="font-size: 1.5rem; opacity: 0.15;"></i>
+                <div class="card-title">Memory</div>
+                <div class="card-value" id="memory-usage">0%</div>
+            </div>
+        </div>
+        <div class="col-md-2 col-6">
+            <div class="stat-card card-green">
+                <i class="fas fa-clock position-absolute end-0 top-0 m-3" style="font-size: 1.5rem; opacity: 0.15;"></i>
+                <div class="card-title">Uptime</div>
+                <div class="card-value" id="uptime">0s</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ============================================ -->
+    <!-- 📊 PROTOCOL STATS ROW - DNS, HTTP, HTTPS, TCP, UDP, ICMP, ARP, ALERTS -->
+    <!-- ============================================ -->
+    <div class="row g-2 mb-3">
+        <div class="col-md-3 col-sm-6">
+            <div class="stat-card card-purple">
+                <i class="fas fa-search position-absolute end-0 top-0 m-3" style="font-size: 1.5rem; opacity: 0.15;"></i>
+                <div class="card-title">DNS Queries</div>
+                <div class="card-value" id="dns-count">0</div>
+            </div>
+        </div>
+        <div class="col-md-3 col-sm-6">
+            <div class="stat-card card-pink">
+                <i class="fas fa-globe position-absolute end-0 top-0 m-3" style="font-size: 1.5rem; opacity: 0.15;"></i>
+                <div class="card-title">HTTP Requests</div>
+                <div class="card-value" id="http-count">0</div>
+            </div>
+        </div>
+        <div class="col-md-3 col-sm-6">
+            <div class="stat-card card-teal">
+                <i class="fas fa-shield-alt position-absolute end-0 top-0 m-3" style="font-size: 1.5rem; opacity: 0.15;"></i>
+                <div class="card-title">HTTPS / TLS</div>
+                <div class="card-value" id="https-count">0</div>
+            </div>
+        </div>
+        <div class="col-md-3 col-sm-6">
+            <div class="stat-card card-blue">
+                <i class="fas fa-network-wired position-absolute end-0 top-0 m-3" style="font-size: 1.5rem; opacity: 0.15;"></i>
+                <div class="card-title">TCP Connections</div>
+                <div class="card-value" id="tcp-count">0</div>
+            </div>
+        </div>
+    </div>
+    <div class="row g-2 mb-3">
+        <div class="col-md-3 col-sm-6">
+            <div class="stat-card card-orange">
+                <i class="fas fa-exchange-alt position-absolute end-0 top-0 m-3" style="font-size: 1.5rem; opacity: 0.15;"></i>
+                <div class="card-title">UDP Packets</div>
+                <div class="card-value" id="udp-count">0</div>
+            </div>
+        </div>
+        <div class="col-md-3 col-sm-6">
+            <div class="stat-card card-green">
+                <i class="fas fa-bolt position-absolute end-0 top-0 m-3" style="font-size: 1.5rem; opacity: 0.15;"></i>
+                <div class="card-title">ICMP Packets</div>
+                <div class="card-value" id="icmp-count">0</div>
+            </div>
+        </div>
+        <div class="col-md-3 col-sm-6">
+            <div class="stat-card card-cyan">
+                <i class="fas fa-ethernet position-absolute end-0 top-0 m-3" style="font-size: 1.5rem; opacity: 0.15;"></i>
+                <div class="card-title">ARP Packets</div>
+                <div class="card-value" id="arp-count">0</div>
+            </div>
+        </div>
+        <div class="col-md-3 col-sm-6">
+            <div class="stat-card card-pink">
+                <i class="fas fa-exclamation-triangle position-absolute end-0 top-0 m-3" style="font-size: 1.5rem; opacity: 0.15;"></i>
+                <div class="card-title">Security Alerts</div>
+                <div class="card-value" id="alert-badge">0</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ============================================ -->
+    <!-- 🎮 START/STOP BUTTONS + CAPTURE STATUS + EXPORT -->
+    <!-- ============================================ -->
+    <div class="row g-2 mb-3">
+        <div class="col-md-12">
+            <div class="card card-custom">
+                <div class="card-body py-2">
+                    <div class="row align-items-center">
+                        <div class="col-md-2">
+                            <span class="fw-bold" style="font-size: 0.85rem;">Capture Status:</span>
+                            <span class="badge-status stopped" id="capture-status">🔴 Stopped</span>
+                        </div>
+                        <div class="col-md-3">
+                            <div class="input-group input-group-sm">
+                                <span class="input-group-text" style="background-color: #334155; color: #f8fafc; border-color: #475569; font-size: 0.75rem;">Interface</span>
+                                <select id="interface-select" class="form-select" style="background-color: #1e293b; color: #f8fafc; border-color: #475569; font-size: 0.75rem;">
+                                    <option value="">Auto-Detect</option>
+                                </select>
+                            </div>
+                        </div>
+                        <div class="col-md-3">
+                            <button id="start-capture" class="btn-start btn-sm">
+                                <i class="fas fa-play"></i> Start
+                            </button>
+                            <button id="stop-capture" class="btn-stop btn-sm ms-1">
+                                <i class="fas fa-stop"></i> Stop
+                            </button>
+                            <span class="ms-2 text-muted" style="font-size: 0.75rem;">
+                                <i class="fas fa-sync fa-spin"></i> Auto-refresh
+                            </span>
+                        </div>
+                        <div class="col-md-4 text-end">
+                            <button class="btn btn-success btn-sm me-1" onclick="exportCSV()">
+                                <i class="fas fa-file-csv"></i> CSV
+                            </button>
+                            <button class="btn btn-danger btn-sm me-1" onclick="exportPDF()">
+                                <i class="fas fa-file-pdf"></i> PDF
+                            </button>
+                            <button class="btn btn-info btn-sm" onclick="exportJSON()">
+                                <i class="fas fa-file-code"></i> JSON
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ============================================ -->
+    <!-- 📊 TABLES ROW - Top Talkers & DNS Monitoring -->
+    <!-- ============================================ -->
+    <div class="row g-3">
+        <div class="col-lg-6">
+            <div class="card card-custom">
+                <div class="card-header py-2">
+                    <i class="fas fa-users me-2" style="color: #3b82f6;"></i>Top Talkers
+                    <small class="text-muted ms-2">(Bandwidth Usage)</small>
+                </div>
+                <div class="card-body p-0">
+                    <div class="table-responsive">
+                        <table class="table table-theme mb-0" style="font-size: 0.8rem;" id="top-talkers-table">
+                            <thead>
+                                <tr>
+                                    <th>#</th>
+                                    <th>IP Address</th>
+                                    <th>Packets</th>
+                                    <th>Bandwidth</th>
+                                </tr>
+                            </thead>
+                            <tbody id="top-talkers-body">
+                                <tr><td colspan="4" class="text-center text-muted">No data</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="col-lg-6">
+            <div class="card card-custom">
+                <div class="card-header py-2">
+                    <i class="fas fa-globe me-2" style="color: #8b5cf6;"></i>DNS Monitoring
+                    <span class="badge bg-info ms-2" id="dns-count-badge">0</span>
+                </div>
+                <div class="card-body p-0">
+                    <div class="table-responsive" style="max-height: 300px; overflow-y: auto;">
+                        <table class="table table-theme mb-0" style="font-size: 0.75rem;" id="dns-table">
+                            <thead>
+                                <tr>
+                                    <th>Time</th>
+                                    <th>Source IP</th>
+                                    <th>Domain</th>
+                                </tr>
+                            </thead>
+                            <tbody id="dns-body">
+                                <tr><td colspan="3" class="text-center text-muted">No DNS queries yet</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ============================================ -->
+    <!-- 📋 Alerts & Search -->
+    <!-- ============================================ -->
+    <div class="row g-3 mt-2">
+        <div class="col-lg-6">
+            <div class="card card-custom">
+                <div class="card-header py-2">
+                    <i class="fas fa-bell me-2" style="color: #ef4444;"></i>Recent Alerts
+                    <span class="badge bg-danger ms-2" id="alert-count-badge">0</span>
+                </div>
+                <div class="card-body p-0">
+                    <div class="list-group list-group-flush" id="alerts-list">
+                        <div class="list-group-item text-muted text-center">No alerts</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="col-lg-6">
+            <div class="card card-custom">
+                <div class="card-header py-2">
+                    <i class="fas fa-search me-2" style="color: #06b6d4;"></i>Search Packets
+                </div>
+                <div class="card-body">
+                    <div class="row g-2">
+                        <div class="col-md-4">
+                            <input type="text" class="form-control form-control-sm" 
+                                   id="search-ip" placeholder="Search by IP...">
+                        </div>
+                        <div class="col-md-4">
+                            <input type="text" class="form-control form-control-sm" 
+                                   id="search-domain" placeholder="Search by Domain...">
+                        </div>
+                        <div class="col-md-4">
+                            <button class="btn btn-primary btn-sm w-100" onclick="searchPackets()">
+                                <i class="fas fa-search"></i> Search
+                            </button>
+                        </div>
+                    </div>
+                    <div id="search-results" class="mt-2" style="max-height: 200px; overflow-y: auto;">
+                        <p class="text-muted text-center">Search for packets by IP or domain</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ============================================ -->
+    <!-- 🔍 RECENT PACKETS (WIRESHARK-STYLE LOG) -->
+    <!-- ============================================ -->
+    <div class="row g-3 mt-2">
+        <div class="col-12">
+            <div class="card card-custom">
+                <div class="card-header py-2" style="background-color: #1e293b; border-bottom: 1px solid #334155; font-weight: 600;">
+                    <i class="fas fa-list me-2" style="color: #3b82f6;"></i>Captured Packets (Wireshark Style - Click row to Inspect details)
+                </div>
+                <div class="card-body p-0">
+                    <div class="table-responsive" style="max-height: 350px; overflow-y: auto;">
+                        <table class="table table-theme table-hover mb-0" style="font-size: 0.8rem;" id="recent-packets-table">
+                            <thead>
+                                <tr>
+                                    <th>#</th>
+                                    <th>Time</th>
+                                    <th>Source IP</th>
+                                    <th>Destination IP</th>
+                                    <th>Protocol</th>
+                                    <th>Length (Bytes)</th>
+                                </tr>
+                            </thead>
+                            <tbody id="recent-packets-body" style="cursor: pointer;">
+                                <tr><td colspan="6" class="text-center text-muted">No packets captured yet. Start capture to begin.</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ============================================ -->
+    <!-- 🖥️ SYSTEM INFO - Bottom -->
+    <!-- ============================================ -->
+    <div class="row mt-3">
+        <div class="col-12">
+            <div class="card card-custom">
+                <div class="card-body py-2">
+                    <div class="row align-items-center text-muted" style="font-size: 0.75rem;">
+                        <div class="col-md-3">
+                            <i class="fas fa-desktop me-1"></i> OS: <span id="system-os">Loading...</span>
+                        </div>
+                        <div class="col-md-3">
+                            <i class="fab fa-python me-1"></i> Python: <span id="system-python">Loading...</span>
+                        </div>
+                        <div class="col-md-3">
+                            <i class="fas fa-database me-1"></i> DB Size: <span id="system-db-size">0 KB</span>
+                        </div>
+                        <div class="col-md-3">
+                            <i class="fas fa-hdd me-1"></i> Packets: <span id="system-packet-count">0</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+</div>
+
+<!-- 🔍 PACKET INSPECTOR MODAL -->
+<div class="modal fade" id="packetInspectorModal" tabindex="-1" aria-labelledby="packetInspectorModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-xl modal-dialog-scrollable">
+        <div class="modal-content" style="background-color: #0f172a; color: #f8fafc; border: 1px solid #334155;">
+            <div class="modal-header" style="border-bottom: 1px solid #1e293b;">
+                <h5 class="modal-title" id="packetInspectorModalLabel">
+                    <i class="fas fa-search me-2 text-info"></i>Packet Inspector (Wireshark Style)
+                </h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <!-- Packet metadata row -->
+                <div class="row g-2 mb-3">
+                    <div class="col-md-3">
+                        <div class="p-2 rounded" style="background-color: #1e293b; border: 1px solid #334155;">
+                            <small class="text-muted d-block" style="font-size: 0.65rem;">Time</small>
+                            <span id="inspect-time" class="fw-bold" style="font-size: 0.8rem;">-</span>
+                        </div>
+                    </div>
+                    <div class="col-md-2">
+                        <div class="p-2 rounded" style="background-color: #1e293b; border: 1px solid #334155;">
+                            <small class="text-muted d-block" style="font-size: 0.65rem;">Protocol</small>
+                            <span id="inspect-proto" class="badge bg-info fw-bold" style="font-size: 0.85rem;">-</span>
+                        </div>
+                    </div>
+                    <div class="col-md-3">
+                        <div class="p-2 rounded" style="background-color: #1e293b; border: 1px solid #334155;">
+                            <small class="text-muted d-block" style="font-size: 0.65rem;">Source IP:Port</small>
+                            <span id="inspect-src" class="fw-bold" style="font-size: 0.8rem;">-</span>
+                        </div>
+                    </div>
+                    <div class="col-md-3">
+                        <div class="p-2 rounded" style="background-color: #1e293b; border: 1px solid #334155;">
+                            <small class="text-muted d-block" style="font-size: 0.65rem;">Destination IP:Port</small>
+                            <span id="inspect-dst" class="fw-bold" style="font-size: 0.8rem;">-</span>
+                        </div>
+                    </div>
+                    <div class="col-md-1">
+                        <div class="p-2 rounded" style="background-color: #1e293b; border: 1px solid #334155;">
+                            <small class="text-muted d-block" style="font-size: 0.65rem;">Length</small>
+                            <span id="inspect-len" class="fw-bold" style="font-size: 0.8rem;">-</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Tabs/Views -->
+                <div class="row">
+                    <div class="col-12">
+                        <ul class="nav nav-tabs" id="inspectorTab" role="tablist" style="border-bottom: 1px solid #334155;">
+                            <li class="nav-item" role="presentation">
+                                <button class="nav-link active text-white" id="layers-tab" data-bs-toggle="tab" data-bs-target="#layers-view" type="button" role="tab" aria-controls="layers-view" aria-selected="true" style="background: transparent; border: none; border-bottom: 2px solid #0ea5e9; font-size: 0.8rem;">
+                                    <i class="fas fa-network-wired me-1"></i>Parsed Layers (Wireshark Middle Pane)
+                                </button>
+                            </li>
+                            <li class="nav-item" role="presentation">
+                                <button class="nav-link text-white ms-2" id="hex-tab" data-bs-toggle="tab" data-bs-target="#hex-view" type="button" role="tab" aria-controls="hex-view" aria-selected="false" style="background: transparent; border: none; font-size: 0.8rem;">
+                                    <i class="fas fa-file-code me-1"></i>Hex Dump (Wireshark Bottom Pane)
+                                </button>
+                            </li>
+                        </ul>
+                        <div class="tab-content p-3 rounded-bottom" id="inspectorTabContent" style="background-color: #0b0f19; border: 1px solid #334155; border-top: none;">
+                            <div class="tab-pane fade show active" id="layers-view" role="tabpanel" aria-labelledby="layers-tab">
+                                <pre id="inspect-layers" class="mb-0 text-success" style="font-family: 'Courier New', Courier, monospace; font-size: 0.8rem; max-height: 350px; overflow-y: auto;">Parsing packet layers...</pre>
+                            </div>
+                            <div class="tab-pane fade" id="hex-view" role="tabpanel" aria-labelledby="hex-tab">
+                                <pre id="inspect-hex" class="mb-0 text-warning" style="font-family: 'Courier New', Courier, monospace; font-size: 0.8rem; max-height: 350px; overflow-y: auto;">Loading hex dump...</pre>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer" style="border-top: 1px solid #1e293b;">
+                <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Close Inspector</button>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('static', filename='js/dashboard.js') }}"></script>
+<script src="{{ url_for('static', filename='js/dns_monitor.js') }}"></script>
+<script src="{{ url_for('static', filename='js/export.js') }}"></script>
+<script src="{{ url_for('static', filename='js/search.js') }}"></script>
+{% endblock %}

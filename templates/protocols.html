@@ -1,0 +1,130 @@
+{% extends "base.html" %}
+{% block content %}
+<h1 class="mb-4" style="font-weight: 700; color: #f8fafc;">
+    <i class="fas fa-code me-2" style="color: #8b5cf6;"></i>Protocol Analysis
+</h1>
+
+<!-- ============================================ -->
+<!-- 📊 PROTOCOL STATS CARDS -->
+<!-- ============================================ -->
+<div class="row g-3 mb-4">
+    <div class="col-md-2 col-6">
+        <div class="stat-card card-purple" style="padding: 12px 15px; position: relative;">
+            <i class="fas fa-globe" style="font-size: 1.5rem; opacity: 0.2; position: absolute; right: 12px; top: 12px;"></i>
+            <div class="card-title" style="font-size: 0.55rem; text-transform: uppercase; letter-spacing: 0.5px;">DNS Queries</div>
+            <div class="card-value" id="proto-dns" style="font-size: 1.4rem; font-weight: 700;">0</div>
+        </div>
+    </div>
+    <div class="col-md-2 col-6">
+        <div class="stat-card card-pink" style="padding: 12px 15px; position: relative;">
+            <i class="fas fa-globe" style="font-size: 1.5rem; opacity: 0.2; position: absolute; right: 12px; top: 12px;"></i>
+            <div class="card-title" style="font-size: 0.55rem; text-transform: uppercase; letter-spacing: 0.5px;">HTTP Requests</div>
+            <div class="card-value" id="proto-http" style="font-size: 1.4rem; font-weight: 700;">0</div>
+        </div>
+    </div>
+    <div class="col-md-2 col-6">
+        <div class="stat-card card-teal" style="padding: 12px 15px; position: relative;">
+            <i class="fas fa-lock" style="font-size: 1.5rem; opacity: 0.2; position: absolute; right: 12px; top: 12px;"></i>
+            <div class="card-title" style="font-size: 0.55rem; text-transform: uppercase; letter-spacing: 0.5px;">HTTPS Requests</div>
+            <div class="card-value" id="proto-https" style="font-size: 1.4rem; font-weight: 700;">0</div>
+        </div>
+    </div>
+    <div class="col-md-2 col-6">
+        <div class="stat-card card-blue" style="padding: 12px 15px; position: relative;">
+            <i class="fas fa-network-wired" style="font-size: 1.5rem; opacity: 0.2; position: absolute; right: 12px; top: 12px;"></i>
+            <div class="card-title" style="font-size: 0.55rem; text-transform: uppercase; letter-spacing: 0.5px;">TCP Connections</div>
+            <div class="card-value" id="proto-tcp" style="font-size: 1.4rem; font-weight: 700;">0</div>
+        </div>
+    </div>
+    <div class="col-md-2 col-6">
+        <div class="stat-card card-orange" style="padding: 12px 15px; position: relative;">
+            <i class="fas fa-clock" style="font-size: 1.5rem; opacity: 0.2; position: absolute; right: 12px; top: 12px;"></i>
+            <div class="card-title" style="font-size: 0.55rem; text-transform: uppercase; letter-spacing: 0.5px;">UDP Packets</div>
+            <div class="card-value" id="proto-udp" style="font-size: 1.4rem; font-weight: 700;">0</div>
+        </div>
+    </div>
+    <div class="col-md-2 col-6">
+        <div class="stat-card card-green" style="padding: 12px 15px; position: relative;">
+            <i class="fas fa-bolt" style="font-size: 1.5rem; opacity: 0.2; position: absolute; right: 12px; top: 12px;"></i>
+            <div class="card-title" style="font-size: 0.55rem; text-transform: uppercase; letter-spacing: 0.5px;">ICMP Packets</div>
+            <div class="card-value" id="proto-icmp" style="font-size: 1.4rem; font-weight: 700;">0</div>
+        </div>
+    </div>
+</div>
+
+
+
+<!-- ============================================ -->
+<!-- 📊 TOP DOMAINS & HOSTS -->
+<!-- ============================================ -->
+<div class="row g-4">
+    <div class="col-lg-6">
+        <div class="card card-custom">
+            <div class="card-header"><i class="fas fa-star me-2" style="color: #f59e0b;"></i>Top DNS Domains</div>
+            <div class="card-body p-0">
+                <ul id="top-dns-domains" class="list-group list-group-flush">
+                    <li class="list-group-item text-muted text-center">No DNS data yet</li>
+                </ul>
+            </div>
+        </div>
+    </div>
+    <div class="col-lg-6">
+        <div class="card card-custom">
+            <div class="card-header"><i class="fas fa-server me-2" style="color: #ec4899;"></i>Most Active Hosts</div>
+            <div class="card-body p-0">
+                <ul id="active-hosts" class="list-group list-group-flush">
+                    <li class="list-group-item text-muted text-center">No host data yet</li>
+                </ul>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- ============================================ -->
+<!-- 📊 PROTOCOL DETAILS TABLE -->
+<!-- ============================================ -->
+<div class="row mt-4">
+    <div class="col-12">
+        <div class="card card-custom">
+            <div class="card-header"><i class="fas fa-table me-2" style="color: #3b82f6;"></i>Protocol Details</div>
+            <div class="card-body p-0">
+                <div class="table-responsive">
+                    <table class="table table-theme mb-0">
+                        <thead>
+                            <tr>
+                                <th>Protocol</th>
+                                <th>Packet Count</th>
+                                <th>% of Traffic</th>
+                                <th>Bytes</th>
+                            </tr>
+                        </thead>
+                        <tbody id="protocol-details-body">
+                            <tr><td colspan="4" class="text-center text-muted">No data available</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- ============================================ -->
+<!-- 🔄 LIVE STATUS -->
+<!-- ============================================ -->
+<div class="row mt-3">
+    <div class="col-12">
+        <div class="card card-custom">
+            <div class="card-body py-2 text-center text-muted" style="font-size: 0.8rem;">
+                <i class="fas fa-sync fa-spin me-2"></i> 
+                Auto-refreshing every 5 seconds
+                <span class="badge bg-success ms-2" id="proto-live-status">🟢 Live</span>
+                <span class="badge bg-info ms-2" id="proto-count-badge">0 packets</span>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('static', filename='js/protocols.js') }}"></script>
+{% endblock %}

@@ -1,0 +1,131 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="container-fluid px-0">
+    <div class="d-flex justify-content-between align-items-center mb-3">
+        <div>
+            <h3 class="fw-bold mb-0 text-light">
+                <i class="fas fa-search-location me-2 text-warning"></i>SOC Threat Hunting
+            </h3>
+            <p class="text-muted small mb-0">Search and correlate live packet events & threat engine alerts by MITRE ATT&CK criteria.</p>
+        </div>
+    </div>
+
+    <!-- Filter Card -->
+    <div class="card bg-dark border-secondary text-white mb-4 shadow-sm">
+        <div class="card-header bg-black bg-opacity-25 fw-semibold">
+            <i class="fas fa-filter me-2 text-info"></i>Threat Hunting Search Filters
+        </div>
+        <div class="card-body">
+            <form id="hunting-filter-form" onsubmit="event.preventDefault(); runThreatHunt();">
+                <div class="row g-3">
+                    <div class="col-md-2">
+                        <label class="form-label small text-secondary">Technique ID</label>
+                        <input type="text" id="hunt-technique-id" class="form-control form-control-sm bg-black text-white border-secondary" placeholder="e.g. T1110">
+                    </div>
+                    <div class="col-md-2">
+                        <label class="form-label small text-secondary">Tactic</label>
+                        <select id="hunt-tactic" class="form-select form-select-sm bg-black text-white border-secondary">
+                            <option value="">All Tactics</option>
+                            <option value="Discovery">Discovery</option>
+                            <option value="Credential Access">Credential Access</option>
+                            <option value="Impact">Impact</option>
+                            <option value="Command and Control">Command and Control</option>
+                        </select>
+                    </div>
+                    <div class="col-md-2">
+                        <label class="form-label small text-secondary">Detection Type</label>
+                        <select id="hunt-detection-type" class="form-select form-select-sm bg-black text-white border-secondary">
+                            <option value="">All Detection Types</option>
+                            <option value="brute_force">Brute Force</option>
+                            <option value="port_scan">Port Scan</option>
+                            <option value="dns_flood">DNS Flood</option>
+                            <option value="icmp_flood">ICMP Flood</option>
+                            <option value="excessive_tcp">Excessive TCP</option>
+                            <option value="beaconing">Beaconing</option>
+                        </select>
+                    </div>
+                    <div class="col-md-2">
+                        <label class="form-label small text-secondary">Severity</label>
+                        <select id="hunt-severity" class="form-select form-select-sm bg-black text-white border-secondary">
+                            <option value="">All Severities</option>
+                            <option value="CRITICAL">CRITICAL</option>
+                            <option value="HIGH">HIGH</option>
+                            <option value="MEDIUM">MEDIUM</option>
+                            <option value="LOW">LOW</option>
+                        </select>
+                    </div>
+                    <div class="col-md-2">
+                        <label class="form-label small text-secondary">Source IP</label>
+                        <input type="text" id="hunt-source-ip" class="form-control form-control-sm bg-black text-white border-secondary" placeholder="e.g. 192.168.1.100">
+                    </div>
+                    <div class="col-md-2 d-flex align-items-end gap-2">
+                        <button type="submit" class="btn btn-sm btn-primary w-100">
+                            <i class="fas fa-search me-1"></i>Search
+                        </button>
+                        <button type="button" class="btn btn-sm btn-outline-secondary" onclick="resetHuntFilters()">
+                            Reset
+                        </button>
+                    </div>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Results Card -->
+    <div class="card bg-dark border-secondary text-white shadow-sm">
+        <div class="card-header bg-black bg-opacity-25 d-flex justify-content-between align-items-center">
+            <h6 class="mb-0 fw-semibold"><i class="fas fa-microscope me-2 text-success"></i>Hunt Results</h6>
+            <span class="badge bg-secondary" id="hunt-count-badge">0 Detections Found</span>
+        </div>
+        <div class="card-body p-0">
+            <div class="table-responsive">
+                <table class="table table-dark table-hover mb-0 align-middle">
+                    <thead>
+                        <tr class="text-secondary small">
+                            <th>TIMESTAMP</th>
+                            <th>DETECTION TYPE</th>
+                            <th>MITRE TECHNIQUE</th>
+                            <th>TACTIC</th>
+                            <th>SOURCE IP</th>
+                            <th>DESTINATION IP</th>
+                            <th>SEVERITY</th>
+                            <th>EVIDENCE / DETAILS</th>
+                            <th>INSPECT</th>
+                        </tr>
+                    </thead>
+                    <tbody id="hunt-results-tbody">
+                        <tr>
+                            <td colspan="9" class="text-center text-muted py-4">Enter filters above to execute a threat hunt.</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Alert Detail Modal -->
+<div class="modal fade" id="huntAlertModal" tabindex="-1" aria-labelledby="huntAlertModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-lg modal-dialog-centered">
+        <div class="modal-content bg-dark text-white border-secondary">
+            <div class="modal-header border-secondary bg-black bg-opacity-25">
+                <h5 class="modal-title" id="huntAlertModalLabel">
+                    <i class="fas fa-magnifying-glass-location me-2 text-warning"></i>SOC Threat Hunt Inspector
+                </h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body" id="hunt-alert-modal-body">
+                <!-- Content populated dynamically -->
+            </div>
+            <div class="modal-footer border-secondary">
+                <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Close</button>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('static', filename='js/threat_hunting.js') }}"></script>
+{% endblock %}

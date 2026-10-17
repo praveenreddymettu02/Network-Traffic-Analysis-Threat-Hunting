@@ -1,0 +1,113 @@
+{% extends "base.html" %}
+{% block content %}
+<h1 class="mb-4" style="font-weight: 700; color: #f8fafc;">
+    <i class="fas fa-globe me-2" style="color: #8b5cf6;"></i>DNS Monitoring
+</h1>
+
+<!-- Stats -->
+<div class="row g-3 mb-4">
+    <div class="col-md-3">
+        <div class="stat-card card-blue">
+            <i class="fas fa-search stat-icon"></i>
+            <div class="card-title">Total DNS Queries</div>
+            <div class="card-value" id="dns-total">0</div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="stat-card card-purple">
+            <i class="fas fa-server stat-icon"></i>
+            <div class="card-title">Unique Domains</div>
+            <div class="card-value" id="dns-unique">0</div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="stat-card card-pink">
+            <i class="fas fa-clock stat-icon"></i>
+            <div class="card-title">Latest Query</div>
+            <div class="card-value" id="dns-latest" style="font-size: 1.2rem;">-</div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="stat-card card-teal">
+            <i class="fas fa-sync stat-icon"></i>
+            <div class="card-title">Session ID</div>
+            <div class="card-value" id="dns-session" style="font-size: 1.2rem;">-</div>
+        </div>
+    </div>
+</div>
+
+<!-- Top Domains -->
+<div class="row g-3 mb-4">
+    <div class="col-12">
+        <div class="card card-custom">
+            <div class="card-header"><i class="fas fa-star me-2" style="color: #f59e0b;"></i>Top DNS Domains</div>
+            <div class="card-body" id="dns-top-domains">
+                <p class="text-muted text-center">No data yet</p>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- All DNS Queries -->
+<div class="row g-3">
+    <div class="col-12">
+        <div class="card card-custom">
+            <div class="card-header"><i class="fas fa-list me-2" style="color: #06b6d4;"></i>DNS Query Log</div>
+            <div class="card-body p-0">
+                <div class="table-responsive" style="max-height: 500px; overflow-y: auto;">
+                    <table class="table table-theme mb-0" id="dns-log-table">
+                        <thead>
+                            <tr>
+                                <th>Time</th>
+                                <th>Source IP</th>
+                                <th>Destination IP</th>
+                                <th>Domain</th>
+                                <th>Type</th>
+                            </tr>
+                        </thead>
+                        <tbody id="dns-log-body">
+                            <tr><td colspan="5" class="text-center text-muted">No DNS queries yet</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('static', filename='js/dns_monitor.js') }}"></script>
+<script>
+// Override DNS fetch for dedicated page
+document.addEventListener('DOMContentLoaded', function() {
+    // Fetch DNS stats
+    function fetchDNSStats() {
+        fetch('/api/dns/count')
+            .then(res => res.json())
+            .then(data => {
+                document.getElementById('dns-total').innerText = data.count || 0;
+                document.getElementById('dns-session').innerText = data.session_id || '-';
+            });
+        
+        fetch('/api/dns/top')
+            .then(res => res.json())
+            .then(data => {
+                const container = document.getElementById('dns-top-domains');
+                if (data.domains && data.domains.length > 0) {
+                    container.innerHTML = data.domains.map(d => `
+                        <span class="badge bg-primary m-1 p-2" style="font-size: 0.9rem;">
+                            ${d.domain} <span class="badge bg-light text-dark ms-1">${d.count}</span>
+                        </span>
+                    `).join('');
+                } else {
+                    container.innerHTML = '<p class="text-muted text-center">No domains yet</p>';
+                }
+            });
+    }
+    
+    fetchDNSStats();
+    setInterval(fetchDNSStats, 5000);
+});
+</script>
+{% endblock %}

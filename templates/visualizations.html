@@ -1,0 +1,119 @@
+{% extends "base.html" %}
+{% block content %}
+<h1 class="mb-4" style="font-weight: 700; color: #f8fafc;">
+    <i class="fas fa-chart-line me-2" style="color: #3b82f6;"></i>Visualizations
+</h1>
+
+<!-- ============================================ -->
+<!-- 📊 STATS ROW -->
+<!-- ============================================ -->
+<div class="row g-3 mb-4">
+    <div class="col-md-3 col-sm-6">
+        <div class="stat-card card-blue" style="padding: 12px 15px;">
+            <div class="card-title" style="font-size: 0.55rem; text-transform: uppercase;">Total Packets</div>
+            <div class="card-value" id="vis-total-packets" style="font-size: 1.4rem;">0</div>
+        </div>
+    </div>
+    <div class="col-md-3 col-sm-6">
+        <div class="stat-card card-purple" style="padding: 12px 15px;">
+            <div class="card-title" style="font-size: 0.55rem; text-transform: uppercase;">Packets/sec</div>
+            <div class="card-value" id="vis-pps" style="font-size: 1.4rem;">0</div>
+        </div>
+    </div>
+    <div class="col-md-3 col-sm-6">
+        <div class="stat-card card-pink" style="padding: 12px 15px;">
+            <div class="card-title" style="font-size: 0.55rem; text-transform: uppercase;">Bandwidth</div>
+            <div class="card-value" id="vis-bandwidth" style="font-size: 1.4rem;">0 B/s</div>
+        </div>
+    </div>
+    <div class="col-md-3 col-sm-6">
+        <div class="stat-card card-teal" style="padding: 12px 15px;">
+            <div class="card-title" style="font-size: 0.55rem; text-transform: uppercase;">Active TCP</div>
+            <div class="card-value" id="vis-active-tcp" style="font-size: 1.4rem;">0</div>
+        </div>
+    </div>
+</div>
+
+<!-- ============================================ -->
+<!-- 📊 CHARTS ROW 1 -->
+<!-- ============================================ -->
+<div class="row g-4">
+    <div class="col-lg-8">
+        <div class="card card-custom">
+            <div class="card-header">
+                <i class="fas fa-wave-square me-2" style="color: #f59e0b;"></i>Traffic Timeline
+                <span class="badge bg-success ms-2" id="timeline-status">🟢 Live</span>
+            </div>
+            <div class="card-body">
+                <canvas id="timeline-chart" height="250"></canvas>
+            </div>
+        </div>
+    </div>
+    <div class="col-lg-4">
+        <div class="card card-custom">
+            <div class="card-header">
+                <i class="fas fa-chart-pie me-2" style="color: #ec4899;"></i>Protocol Distribution
+            </div>
+            <div class="card-body">
+                <canvas id="protocol-pie" height="250"></canvas>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- ============================================ -->
+<!-- 📊 CHARTS ROW 2 -->
+<!-- ============================================ -->
+<div class="row g-4 mt-2">
+    <div class="col-lg-4">
+        <div class="card card-custom">
+            <div class="card-header">
+                <i class="fas fa-arrow-up me-2" style="color: #22c55e;"></i>Top Source IPs
+            </div>
+            <div class="card-body">
+                <canvas id="top-src-chart" height="200"></canvas>
+            </div>
+        </div>
+    </div>
+    <div class="col-lg-4">
+        <div class="card card-custom">
+            <div class="card-header">
+                <i class="fas fa-arrow-down me-2" style="color: #ef4444;"></i>Top Destination IPs
+            </div>
+            <div class="card-body">
+                <canvas id="top-dst-chart" height="200"></canvas>
+            </div>
+        </div>
+    </div>
+    <div class="col-lg-4">
+        <div class="card card-custom">
+            <div class="card-header">
+                <i class="fas fa-plug me-2" style="color: #8b5cf6;"></i>Top Ports
+            </div>
+            <div class="card-body">
+                <canvas id="top-ports-chart" height="200"></canvas>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- ============================================ -->
+<!-- 🔄 LIVE STATUS -->
+<!-- ============================================ -->
+<div class="row mt-3">
+    <div class="col-12">
+        <div class="card card-custom">
+            <div class="card-body py-2 text-center text-muted" style="font-size: 0.8rem;">
+                <i class="fas fa-sync fa-spin me-2"></i> 
+                Auto-refreshing every 2 seconds
+                <span class="badge bg-success ms-2" id="vis-live-status">🟢 Live</span>
+                <span class="badge bg-info ms-2" id="vis-update-time">Just now</span>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('static', filename='js/visualizations.js') }}"></script>
+{% endblock %}

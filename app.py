@@ -9,7 +9,7 @@ logger = setup_logger('app')
 
 
 def create_app():
-    app = Flask(__name__)
+    gunicorn 'app:create_app()'
     app.config.from_object(Config)
     app.config['TEMPLATES_AUTO_RELOAD'] = True
     CORS(app)

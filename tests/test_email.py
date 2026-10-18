@@ -4,9 +4,11 @@ from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 import datetime
 
-# YOUR CREDENTIALS
-EMAIL = 'praveenreddymettu02@gmail.com'
-PASSWORD = 'wnmadobaluhlqpqcg'  # ← YOUR APP PASSWORD (NO SPACES)
+import os
+
+# CREDENTIALS via environment variables
+EMAIL = os.getenv('ALERT_EMAIL', '')
+PASSWORD = os.getenv('ALERT_EMAIL_PASSWORD', '')
 
 def send_test():
     try:

@@ -1,0 +1,19 @@
+services:
+  - type: web
+    name: network-traffic-analyzer
+    runtime: python
+    buildCommand: pip install --upgrade pip && pip install -r requirements.txt
+    startCommand: gunicorn wsgi:app --workers 1 --threads 4 --timeout 120 --bind 0.0.0.0:$PORT
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.11.9
+      - key: SECRET_KEY
+        generateValue: true
+      - key: INGESTION_KEY
+        generateValue: true
+      - key: LOG_LEVEL
+        value: INFO
+      # If using a Render Persistent Disk (Standard/Pro tier), mount to /var/data and set:
+      # - key: DATABASE_PATH
+      #   value: /var/data/network_traffic.db
+      # On Free tier (ephemeral storage), defaults to data/network_traffic.db inside repo.

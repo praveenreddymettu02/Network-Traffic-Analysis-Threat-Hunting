@@ -54,6 +54,11 @@ document.addEventListener('DOMContentLoaded', function() {
         
         const alertsList = document.getElementById('alerts-list');
         if (alertsList) alertsList.innerHTML = '<div class="list-group-item text-muted text-center">No alerts</div>';
+        
+        const alertBadge = document.getElementById('alert-badge');
+        if (alertBadge) alertBadge.innerText = '0';
+        const alertCountBadge = document.getElementById('alert-count-badge');
+        if (alertCountBadge) alertCountBadge.innerText = '0';
     }
 
     function fetchLiveStats() {
@@ -63,7 +68,7 @@ document.addEventListener('DOMContentLoaded', function() {
                 return response.json();
             })
             .then(data => {
-                if (data.status === 'no_session') {
+                if (data.status === 'no_session' && (!data.total_packets || data.total_packets === 0)) {
                     clearDashboard();
                     updateCaptureStatus(false);
                     return;
@@ -107,6 +112,20 @@ document.addEventListener('DOMContentLoaded', function() {
 
     // 🔥 Fetch Recent Alerts
     function fetchRecentAlerts() {
+        // Fetch stats to update badges
+        fetch('/api/alerts/stats')
+            .then(res => res.json())
+            .then(data => {
+                if (data.status === 'success' && data.stats) {
+                    const totalAlerts = data.stats.total || 0;
+                    const alertBadge = document.getElementById('alert-badge');
+                    const alertCountBadge = document.getElementById('alert-count-badge');
+                    if (alertBadge) alertBadge.innerText = totalAlerts.toLocaleString();
+                    if (alertCountBadge) alertCountBadge.innerText = totalAlerts.toLocaleString();
+                }
+            })
+            .catch(err => console.warn('Alert stats fetch error:', err));
+
         fetch('/api/alerts/recent')
             .then(response => response.json())
             .then(alerts => {
@@ -199,12 +218,16 @@ document.addEventListener('DOMContentLoaded', function() {
             .then(response => response.json())
             .then(data => {
                 if (data.total_packets > 0) {
-                    if (totalPacketsEl) totalPacketsEl.innerText = data.total_packets || 0;
-                    if (dnsCountEl) dnsCountEl.innerText = data.dns_count || 0;
-                    if (httpCountEl) httpCountEl.innerText = data.http_count || 0;
-                    if (tcpCountEl) tcpCountEl.innerText = data.tcp_count || 0;
-                    if (udpCountEl) udpCountEl.innerText = data.udp_count || 0;
+                    if (totalPacketsEl) totalPacketsEl.innerText = (data.total_packets || 0).toLocaleString();
+                    if (dnsCountEl) dnsCountEl.innerText = (data.dns_count || 0).toLocaleString();
+                    if (httpCountEl) httpCountEl.innerText = (data.http_count || 0).toLocaleString();
+                    if (httpsCountEl) httpsCountEl.innerText = (data.https_count || 0).toLocaleString();
+                    if (tcpCountEl) tcpCountEl.innerText = (data.tcp_count || 0).toLocaleString();
+                    if (udpCountEl) udpCountEl.innerText = (data.udp_count || 0).toLocaleString();
+                    if (icmpCountEl) icmpCountEl.innerText = (data.icmp_count || 0).toLocaleString();
+                    if (arpCountEl) arpCountEl.innerText = (data.arp_count || 0).toLocaleString();
                     updateProtocolChart(data.protocol_counts || []);
+                    updateTopIPs(data.top_src_ips, data.top_dst_ips);
                 }
             })
             .catch(err => console.warn('Stats fetch error:', err));
@@ -280,14 +303,36 @@ document.addEventListener('DOMContentLoaded', function() {
             });
     };
 
-    function updateCaptureStatus(isRunning) {
+    function showCaptureError(msg) {
+        const errorAlert = document.getElementById('capture-error-alert');
+        const errorMsg = document.getElementById('capture-error-msg');
+        if (errorAlert && errorMsg) {
+            errorMsg.innerText = msg;
+            errorAlert.classList.remove('d-none');
+        }
+    }
+
+    function hideCaptureError() {
+        const errorAlert = document.getElementById('capture-error-alert');
+        if (errorAlert) {
+            errorAlert.classList.add('d-none');
+        }
+    }
+
+    function updateCaptureStatus(isRunning, canCapture = true, message = '') {
         if (!captureStatusEl) return;
         if (isRunning) {
             captureStatusEl.innerText = '🟢 Running';
             captureStatusEl.className = 'badge-status running';
+            captureStatusEl.title = 'Live packet capture active';
+        } else if (canCapture === false) {
+            captureStatusEl.innerText = '☁️ Agent/Ingest Mode';
+            captureStatusEl.className = 'badge-status stopped';
+            captureStatusEl.title = message || 'Container environment: Live raw socket sniffing restricted. Ingestion API active.';
         } else {
             captureStatusEl.innerText = '🔴 Stopped';
             captureStatusEl.className = 'badge-status stopped';
+            captureStatusEl.title = 'Packet capture idle';
         }
     }
 
@@ -387,7 +432,7 @@ document.addEventListener('DOMContentLoaded', function() {
 
     document.getElementById('start-capture')?.addEventListener('click', function() {
         console.log('Start button clicked!');
-        clearDashboard();
+        hideCaptureError();
         
         const selectedInterface = interfaceSelectEl ? interfaceSelectEl.value : '';
         
@@ -396,13 +441,19 @@ document.addEventListener('DOMContentLoaded', function() {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ interface: selectedInterface })
         })
-        .then(response => {
-            if (!response.ok) throw new Error(`HTTP ${response.status}`);
-            return response.json();
+        .then(async response => {
+            const data = await response.json().catch(() => ({}));
+            if (!response.ok || data.status === 'error') {
+                const msg = data.message || `HTTP ${response.status}: Failed to start capture`;
+                throw new Error(msg);
+            }
+            return data;
         })
         .then(data => {
             console.log('Start response:', data);
+            hideCaptureError();
             currentSessionId = data.session_id;
+            updateCaptureStatus(true);
             
             document.dispatchEvent(new CustomEvent('captureStarted', {
                 detail: { sessionId: currentSessionId }
@@ -416,7 +467,8 @@ document.addEventListener('DOMContentLoaded', function() {
         })
         .catch(err => {
             console.error('Start error:', err);
-            alert('Error starting capture: ' + err.message);
+            updateCaptureStatus(false);
+            showCaptureError(err.message || 'Error starting capture');
         });
     });
 
@@ -427,9 +479,13 @@ document.addEventListener('DOMContentLoaded', function() {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({})
         })
-        .then(response => {
-            if (!response.ok) throw new Error(`HTTP ${response.status}`);
-            return response.json();
+        .then(async response => {
+            const data = await response.json().catch(() => ({}));
+            if (!response.ok || data.status === 'error') {
+                const msg = data.message || `HTTP ${response.status}: Failed to stop capture`;
+                throw new Error(msg);
+            }
+            return data;
         })
         .then(data => {
             console.log('Stop response:', data);
@@ -447,7 +503,39 @@ document.addEventListener('DOMContentLoaded', function() {
         })
         .catch(err => {
             console.error('Stop error:', err);
-            alert('Error stopping capture: ' + err.message);
+            showCaptureError(err.message || 'Error stopping capture');
+        });
+    });
+
+    document.getElementById('btn-demo-data')?.addEventListener('click', function() {
+        const btn = this;
+        const origHtml = btn.innerHTML;
+        btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Generating...';
+        btn.disabled = true;
+
+        fetch('/api/demo/generate', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ count: 120 })
+        })
+        .then(res => res.json())
+        .then(resData => {
+            btn.innerHTML = '<i class="fas fa-check"></i> Done!';
+            setTimeout(() => {
+                btn.innerHTML = origHtml;
+                btn.disabled = false;
+            }, 1200);
+
+            fetchLiveStats();
+            fetchRecentPackets();
+            fetchRecentAlerts();
+            updateTopTalkers();
+        })
+        .catch(err => {
+            console.error('Demo generation error:', err);
+            btn.innerHTML = origHtml;
+            btn.disabled = false;
+            alert('Error generating demo data: ' + err.message);
         });
     });
 
@@ -455,13 +543,16 @@ document.addEventListener('DOMContentLoaded', function() {
         fetch('/api/capture/status')
             .then(response => response.json())
             .then(data => {
-                updateCaptureStatus(data.running);
+                updateCaptureStatus(data.running, data.can_capture, data.capture_message);
                 if (data.running && !liveInterval) {
                     liveInterval = setInterval(fetchLiveStats, 2000);
                     fetchLiveStats();
                 } else if (!data.running && liveInterval) {
                     clearInterval(liveInterval);
                     liveInterval = null;
+                }
+                if (data.last_error && !data.running) {
+                    showCaptureError(data.last_error);
                 }
             })
             .catch(() => {});
@@ -475,12 +566,15 @@ document.addEventListener('DOMContentLoaded', function() {
     fetch('/api/capture/status')
         .then(response => response.json())
         .then(data => {
-            updateCaptureStatus(data.running);
+            updateCaptureStatus(data.running, data.can_capture, data.capture_message);
             if (data.running) {
                 liveInterval = setInterval(fetchLiveStats, 2000);
                 fetchLiveStats();
             } else {
                 fetchStats();
+            }
+            if (data.last_error && !data.running) {
+                showCaptureError(data.last_error);
             }
         })
         .catch(() => {

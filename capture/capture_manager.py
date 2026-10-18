@@ -1,3 +1,4 @@
+import os
 import threading
 import time
 try:
@@ -38,7 +39,7 @@ class CaptureManager:
         self.db = db_manager or DatabaseManager()
         self.parser = PacketParser()
         self.dns_parser = DNSParser()
-        # 🔥 Initialize TCP Session Tracker
+        # Initialize TCP Session Tracker
         self.tcp_tracker = TCPSessionTracker(self.db)
         self.running = False
         self.sniffer_thread = None
@@ -47,6 +48,7 @@ class CaptureManager:
         self.session_id = None
         self._stop_event = threading.Event()
         self.start_time = None
+        self.last_error = None
 
         try:
             interfaces = get_if_list()
@@ -239,14 +241,47 @@ class CaptureManager:
         except Exception as e:
             logger.error("Packet error: %s", e)
 
-    def start_capture(self, count=0, timeout=None):
+    def can_capture(self):
+        """Check if live packet capture is supported in the current environment."""
+        if os.environ.get('RENDER') or os.environ.get('CONTAINER') or os.environ.get('KUBERNETES_SERVICE_HOST'):
+            return False, "Direct packet capture is restricted in container environments (Render/Cloud). Use the Remote Capture Agent (agent/capture_agent.py) to stream traffic securely."
+
+        try:
+            available = get_if_list()
+            if not available:
+                return False, "No network capture interfaces found. Install Npcap on Windows or libpcap on Linux."
+        except Exception as e:
+            return False, f"Network capture subsystem unavailable: {e}. Use the Remote Capture Agent to stream traffic."
+
+        return True, "Packet capture supported"
+
+    def start_capture(self, count=0, timeout=None, interface=None):
+        """Start packet capture on specified or default interface.
+
+        Returns (success: bool, message: str, session_id: int | None).
+        """
+        self.last_error = None
+
         if self.running:
             logger.warning("Capture already running.")
-            return
+            return False, "Capture is already running", self.session_id
+
+        supported, reason = self.can_capture()
+        if not supported:
+            self.last_error = reason
+            logger.error("Capture unsupported: %s", reason)
+            return False, reason, None
+
+        if interface:
+            self.set_interface(interface)
 
         if not self.interface:
-            logger.error("No capture interface selected.")
-            return
+            self.interface = self._get_default_interface()
+
+        if not self.interface:
+            self.last_error = "No capture interface found or selected."
+            logger.error(self.last_error)
+            return False, self.last_error, None
 
         try:
             available = [self._normalize_interface(i) for i in get_if_list()]
@@ -258,31 +293,35 @@ class CaptureManager:
             r"\device\npf_"
         ) or self.interface.startswith("{")
         if is_device_name and self.interface not in available:
-            logger.error(
-                "Interface %r not found in available interfaces: %s",
-                self.interface,
-                available,
-            )
-            return
+            self.last_error = f"Interface {self.interface} not found in available interfaces."
+            logger.error(self.last_error)
+            return False, self.last_error, None
 
         self.session_id = self.db.create_session()
         if not self.session_id:
-            logger.error("Failed to create session")
-            return
+            self.last_error = "Failed to create database capture session."
+            logger.error(self.last_error)
+            return False, self.last_error, None
 
-        logger.info("Session: %s", self.session_id)
+        logger.info("Starting capture session: %s on interface: %s", self.session_id, self.interface)
         self.running = True
         self.packet_count = 0
         self.start_time = time.time()
         self._stop_event.clear()
 
         sniff_count = count if count and count > 0 else 0
-        sniff_timeout = timeout if timeout and timeout > 0 else 1
+        startup_event = threading.Event()
+        startup_error = []
 
         def sniff_loop():
             logger.info("*** STARTING CAPTURE ON %s ***", self.interface)
+            first_cycle = True
             while self.running and not self._stop_event.is_set():
                 try:
+                    if first_cycle:
+                        startup_event.set()
+                        first_cycle = False
+
                     sniff(
                         iface=self.interface,
                         prn=self._packet_callback,
@@ -295,7 +334,11 @@ class CaptureManager:
                         self.running = False
                         break
                 except Exception as e:
-                    logger.error("Sniff error: %s", e)
+                    logger.error("Sniff error on %s: %s", self.interface, e)
+                    self.last_error = str(e)
+                    if first_cycle:
+                        startup_error.append(str(e))
+                        startup_event.set()
                     self.running = False
                     break
 
@@ -313,17 +356,47 @@ class CaptureManager:
 
         self.sniffer_thread = threading.Thread(target=sniff_loop, daemon=True)
         self.sniffer_thread.start()
-        logger.info("Sniffer thread started")
+
+        # Wait up to 500ms to verify thread initialization
+        startup_event.wait(timeout=0.6)
+
+        if startup_error:
+            self.running = False
+            self.last_error = f"Sniff startup failed: {startup_error[0]}"
+            try:
+                self.db.end_session(self.session_id)
+            except Exception:
+                pass
+            self.session_id = None
+            return False, self.last_error, None
+
+        if not self.sniffer_thread.is_alive():
+            self.running = False
+            self.last_error = "Capture thread terminated immediately upon start. Check interface permissions."
+            try:
+                self.db.end_session(self.session_id)
+            except Exception:
+                pass
+            self.session_id = None
+            return False, self.last_error, None
+
+        logger.info("Sniffer thread running successfully.")
+        return True, "Capture started successfully", self.session_id
 
     def stop_capture(self):
+        """Stop active packet capture.
+
+        Returns (success: bool, message: str, session_id: int | None).
+        """
         if not self.running:
-            return
+            return False, "Capture is not running", None
 
         logger.info("Stop capture called")
+        session_id = self.session_id
         self._stop_event.set()
         self.running = False
 
-        # Wait for sniffer thread to fully terminate first so no lingering packets arrive
+        # Wait for sniffer thread to terminate so no lingering packets arrive
         if self.sniffer_thread and self.sniffer_thread.is_alive():
             self.sniffer_thread.join(timeout=3)
 
@@ -340,6 +413,7 @@ class CaptureManager:
             self.session_id = None
 
         self.start_time = None
+        return True, "Capture stopped successfully", session_id
 
     def get_packet_count(self):
         return self.packet_count

@@ -1,3 +1,4 @@
+import os
 import json
 import sqlite3
 import time
@@ -15,6 +16,13 @@ class DatabaseManager:
 
     def __init__(self, db_path=None):
         self.db_path = db_path or Config.DATABASE_PATH
+        db_dir = os.path.dirname(os.path.abspath(self.db_path))
+        if db_dir and not os.path.exists(db_dir):
+            try:
+                os.makedirs(db_dir, exist_ok=True)
+            except Exception as e:
+                logger.warning("Could not create database directory %s: %s", db_dir, e)
+
         self.current_session_id = None
         self._dns_cache = {}
 

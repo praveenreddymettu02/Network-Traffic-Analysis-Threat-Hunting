@@ -526,7 +526,21 @@ Network Traffic Analysis System
             
         except Exception as e:
             logger.error(f"❌ Failed to send email alert: {e}")
-    
+
+    def create_alert(self, **kwargs):
+        """Public method to create and store a new alert, returning the created Alert."""
+        if 'src_ip' in kwargs and 'source_ip' not in kwargs:
+            kwargs['source_ip'] = kwargs['src_ip']
+        if 'message' in kwargs and 'description' not in kwargs:
+            kwargs['description'] = kwargs['message']
+            if 'title' not in kwargs:
+                kwargs['title'] = kwargs['message']
+        self._create_alert(**kwargs)
+        with self.lock:
+            if self.alerts:
+                return self.alerts[-1]
+        return None
+
     def _create_alert(self, **kwargs):
         """Create and store a new alert"""
         try:
@@ -798,14 +812,12 @@ Network Traffic Analysis System
             }
             
             for row in results:
-                stats['total'] += row['count']
-                if row['severity']:
-                    stats['by_severity'][row['severity']] = row['count']
-                if row['resolved_count'] == 0:
-                    stats['active'] += row['count']
-                else:
-                    stats['resolved'] += row['count']
-            
+                stats['total'] += row.get('count', 0)
+                if row.get('severity'):
+                    stats['by_severity'][row['severity']] = row.get('count', 0)
+                stats['active'] += row.get('active', 0) or 0
+                stats['resolved'] += row.get('resolved_count', 0) or 0
+
             return stats
             
         except Exception as e:

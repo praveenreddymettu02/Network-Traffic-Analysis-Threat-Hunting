@@ -497,20 +497,21 @@ def protocol_timeline():
 def start_capture():
     try:
         if capture_mgr.running:
-            return jsonify({'status': 'already running'}), 400
+            return jsonify({'status': 'error', 'message': 'Capture is already running'}), 400
 
         data = request.get_json(silent=True) or {}
         count = data.get('count', 0)
         timeout = data.get('timeout', None)
         interface = data.get('interface')
-        if interface:
-            capture_mgr.set_interface(interface)
 
-        capture_mgr.start_capture(count, timeout)
-        session_id = capture_mgr.get_session_id()
+        success, message, session_id = capture_mgr.start_capture(count=count, timeout=timeout, interface=interface)
+        if not success:
+            logger.warning(f"Capture start rejected: {message}")
+            return jsonify({'status': 'error', 'message': message}), 400
+
         return jsonify({
             'status': 'started',
-            'message': 'Capture started successfully',
+            'message': message,
             'session_id': session_id
         }), 200
     except Exception as e:
@@ -522,14 +523,14 @@ def start_capture():
 def stop_capture():
     try:
         if not capture_mgr.running:
-            return jsonify({'status': 'not running'}), 400
+            return jsonify({'status': 'not running', 'message': 'Capture is not currently active'}), 400
 
         session_id = capture_mgr.get_session_id()
-        capture_mgr.stop_capture()
+        success, message, ended_session = capture_mgr.stop_capture()
         return jsonify({
-            'status': 'stopping',
-            'message': 'Capture stopping...',
-            'session_id': session_id
+            'status': 'stopped' if success else 'stopping',
+            'message': message,
+            'session_id': ended_session or session_id
         }), 200
     except Exception as e:
         logger.error(f"Stop capture error: {e}")
@@ -540,11 +541,16 @@ def stop_capture():
 def capture_status():
     session_id = db.get_current_session_id()
     session_stats = db.get_session_stats(session_id) if session_id else None
+    can_cap, cap_reason = capture_mgr.can_capture()
     return jsonify({
         'running': capture_mgr.running,
         'packets_captured': capture_mgr.get_packet_count(),
         'session_id': session_id,
-        'session_stats': session_stats
+        'session_stats': session_stats,
+        'last_error': getattr(capture_mgr, 'last_error', None),
+        'interface': capture_mgr.interface,
+        'can_capture': can_cap,
+        'capture_message': cap_reason
     })
 
 
@@ -556,6 +562,161 @@ def get_interfaces():
     except Exception as e:
         logger.error(f"Error getting interfaces: {e}")
         return jsonify([]), 500
+
+
+# ============================================
+# 🔒 SECURE INGESTION API (FOR REMOTE CAPTURE AGENTS / RENDER)
+# ============================================
+def verify_ingestion_auth():
+    """Validate X-API-Key or Bearer token against Config.INGESTION_KEY."""
+    expected = getattr(Config, 'INGESTION_KEY', None)
+    if not expected:
+        return True
+
+    api_key = request.headers.get('X-API-Key')
+    if not api_key:
+        auth_header = request.headers.get('Authorization', '')
+        if auth_header.startswith('Bearer '):
+            api_key = auth_header[7:].strip()
+
+    return api_key == expected
+
+
+@api_bp.route('/ingest/status', methods=['GET'])
+def ingest_status():
+    """Status endpoint for remote capture agents to verify server connectivity."""
+    if not verify_ingestion_auth():
+        return jsonify({
+            'status': 'error',
+            'message': 'Unauthorized: Invalid or missing API key'
+        }), 401
+
+    current_session = db.get_current_session_id()
+    total_stored = db.get_packet_count()
+    return jsonify({
+        'status': 'ready',
+        'server_time': int(time.time()),
+        'active_session_id': current_session,
+        'total_packets': total_stored,
+        'total_packets_stored': total_stored,
+        'auth_required': bool(getattr(Config, 'INGESTION_KEY', None)),
+        'supported_protocols': ['TCP', 'UDP', 'DNS', 'HTTP', 'HTTPS', 'TLS', 'ICMP', 'ARP']
+    }), 200
+
+
+@api_bp.route('/ingest/packets', methods=['POST'])
+def ingest_packets():
+    """Securely ingest batches of real network packets from remote capture agents."""
+    if not verify_ingestion_auth():
+        return jsonify({
+            'status': 'error',
+            'message': 'Unauthorized: Invalid or missing API key. Provide X-API-Key header or Bearer token.'
+        }), 401
+
+    data = request.get_json(silent=True)
+    if not data:
+        return jsonify({'status': 'error', 'message': 'Invalid JSON or empty request body'}), 400
+
+    raw_packets = data.get('packets') if isinstance(data, dict) else (data if isinstance(data, list) else None)
+    if not raw_packets or not isinstance(raw_packets, list):
+        return jsonify({'status': 'error', 'message': 'Request must contain a non-empty list of packets'}), 400
+
+    session_id = None
+    if isinstance(data, dict) and data.get('session_id'):
+        try:
+            session_id = int(data['session_id'])
+        except (ValueError, TypeError):
+            session_id = None
+
+    if not session_id:
+        session_id = db.get_active_session_id() or db.get_current_session_id()
+        if not session_id:
+            session_id = db.create_session()
+
+    db.current_session_id = session_id
+    ingested_count = 0
+    current_time = time.time()
+
+    for pkt in raw_packets:
+        if not isinstance(pkt, dict):
+            continue
+
+        pkt_timestamp = pkt.get('timestamp')
+        try:
+            pkt_timestamp = int(pkt_timestamp) if pkt_timestamp else int(current_time)
+        except (ValueError, TypeError):
+            pkt_timestamp = int(current_time)
+
+        src_ip = pkt.get('src_ip')
+        dst_ip = pkt.get('dst_ip')
+        protocol = str(pkt.get('protocol') or 'IP').upper()
+        length = int(pkt.get('length') or 64)
+
+        packet_record = {
+            'session_id': session_id,
+            'timestamp': pkt_timestamp,
+            'src_ip': src_ip,
+            'dst_ip': dst_ip,
+            'src_mac': pkt.get('src_mac'),
+            'dst_mac': pkt.get('dst_mac'),
+            'src_port': pkt.get('src_port'),
+            'dst_port': pkt.get('dst_port'),
+            'protocol': protocol,
+            'length': length,
+            'ttl': pkt.get('ttl'),
+            'tcp_flags': pkt.get('tcp_flags'),
+            'raw_data': pkt.get('raw_data')
+        }
+
+        db.insert_packet(packet_record)
+        ingested_count += 1
+
+        if protocol == 'TCP' or (pkt.get('src_port') and pkt.get('dst_port')):
+            try:
+                capture_mgr.tcp_tracker.process_packet(packet_record)
+            except Exception:
+                pass
+
+        dns_info = pkt.get('dns')
+        if dns_info and isinstance(dns_info, dict) and dns_info.get('domain'):
+            try:
+                db.insert_dns_log(
+                    domain=dns_info.get('domain'),
+                    src_ip=src_ip,
+                    dst_ip=dst_ip,
+                    query_type=dns_info.get('query_type', 'A'),
+                    is_response=int(dns_info.get('is_response', 0)),
+                    answers=dns_info.get('answers', []),
+                    rcode=dns_info.get('rcode')
+                )
+            except Exception:
+                pass
+
+        tls_info = pkt.get('tls')
+        if tls_info and isinstance(tls_info, dict) and tls_info.get('sni'):
+            try:
+                db.insert_dns_log(
+                    domain=tls_info.get('sni'),
+                    src_ip=src_ip,
+                    dst_ip=dst_ip,
+                    query_type='SNI',
+                    is_response=0,
+                    answers=[],
+                    rcode=None
+                )
+            except Exception:
+                pass
+
+    db._flush_packet_queue()
+    db_total = db.get_packet_count()
+
+    return jsonify({
+        'status': 'success',
+        'ingested': ingested_count,
+        'session_id': session_id,
+        'db_total_packets': db_total,
+        'timestamp': int(current_time)
+    }), 200
 
 
 # ============================================

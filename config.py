@@ -25,3 +25,6 @@ class Config:
 
     # Capture defaults
     CAPTURE_TIMEOUT = int(os.getenv('CAPTURE_TIMEOUT', '1'))
+
+    # Ingestion API key for remote capture agents
+    INGESTION_KEY = os.getenv('INGESTION_KEY', 'dev-capture-key-change-in-prod')

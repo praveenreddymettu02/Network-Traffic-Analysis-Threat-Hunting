@@ -551,6 +551,12 @@ document.addEventListener('DOMContentLoaded', function() {
                     clearInterval(liveInterval);
                     liveInterval = null;
                 }
+
+                if (!data.running) {
+                    fetchStats();
+                    fetchRecentAlerts();
+                }
+
                 if (data.last_error && !data.running) {
                     showCaptureError(data.last_error);
                 }

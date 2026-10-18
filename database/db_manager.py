@@ -1030,7 +1030,7 @@ class DatabaseManager:
                     conn.row_factory = None
                     return result
             query = "SELECT (timestamp / ?) * ? as time_bucket, COUNT(*) as count, datetime(MIN(timestamp), 'unixepoch', 'localtime') as start_time, datetime(MAX(timestamp), 'unixepoch', 'localtime') as end_time FROM packets GROUP BY time_bucket ORDER BY time_bucket"
-            cur = conn.execute(query, (interval,))
+            cur = conn.execute(query, (interval, interval))
             result = [dict(row) for row in cur.fetchall()]
             conn.row_factory = None
             return result

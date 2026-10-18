@@ -63,7 +63,7 @@ document.addEventListener('DOMContentLoaded', function() {
                 return response.json();
             })
             .then(data => {
-                if (data.status === 'no_session') {
+                if (data.status === 'no_session' && (!data.total_packets || data.total_packets === 0)) {
                     clearDashboard();
                     updateCaptureStatus(false);
                     return;
@@ -199,12 +199,16 @@ document.addEventListener('DOMContentLoaded', function() {
             .then(response => response.json())
             .then(data => {
                 if (data.total_packets > 0) {
-                    if (totalPacketsEl) totalPacketsEl.innerText = data.total_packets || 0;
-                    if (dnsCountEl) dnsCountEl.innerText = data.dns_count || 0;
-                    if (httpCountEl) httpCountEl.innerText = data.http_count || 0;
-                    if (tcpCountEl) tcpCountEl.innerText = data.tcp_count || 0;
-                    if (udpCountEl) udpCountEl.innerText = data.udp_count || 0;
+                    if (totalPacketsEl) totalPacketsEl.innerText = (data.total_packets || 0).toLocaleString();
+                    if (dnsCountEl) dnsCountEl.innerText = (data.dns_count || 0).toLocaleString();
+                    if (httpCountEl) httpCountEl.innerText = (data.http_count || 0).toLocaleString();
+                    if (httpsCountEl) httpsCountEl.innerText = (data.https_count || 0).toLocaleString();
+                    if (tcpCountEl) tcpCountEl.innerText = (data.tcp_count || 0).toLocaleString();
+                    if (udpCountEl) udpCountEl.innerText = (data.udp_count || 0).toLocaleString();
+                    if (icmpCountEl) icmpCountEl.innerText = (data.icmp_count || 0).toLocaleString();
+                    if (arpCountEl) arpCountEl.innerText = (data.arp_count || 0).toLocaleString();
                     updateProtocolChart(data.protocol_counts || []);
+                    updateTopIPs(data.top_src_ips, data.top_dst_ips);
                 }
             })
             .catch(err => console.warn('Stats fetch error:', err));
@@ -448,6 +452,38 @@ document.addEventListener('DOMContentLoaded', function() {
         .catch(err => {
             console.error('Stop error:', err);
             alert('Error stopping capture: ' + err.message);
+        });
+    });
+
+    document.getElementById('btn-demo-data')?.addEventListener('click', function() {
+        const btn = this;
+        const origHtml = btn.innerHTML;
+        btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Generating...';
+        btn.disabled = true;
+
+        fetch('/api/demo/generate', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ count: 120 })
+        })
+        .then(res => res.json())
+        .then(resData => {
+            btn.innerHTML = '<i class="fas fa-check"></i> Done!';
+            setTimeout(() => {
+                btn.innerHTML = origHtml;
+                btn.disabled = false;
+            }, 1200);
+
+            fetchLiveStats();
+            fetchRecentPackets();
+            fetchRecentAlerts();
+            updateTopTalkers();
+        })
+        .catch(err => {
+            console.error('Demo generation error:', err);
+            btn.innerHTML = origHtml;
+            btn.disabled = false;
+            alert('Error generating demo data: ' + err.message);
         });
     });
 

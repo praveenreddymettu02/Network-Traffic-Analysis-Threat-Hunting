@@ -298,6 +298,18 @@ class DatabaseManager:
             logger.error("End session error: %s", e)
             return False
 
+    def get_active_session_id(self):
+        """Get the ID of an currently active capture session, if any."""
+        try:
+            conn = self._get_connection()
+            cur = conn.cursor()
+            cur.execute("SELECT id FROM sessions WHERE status = 'active' ORDER BY id DESC LIMIT 1")
+            result = cur.fetchone()
+            return result[0] if result else None
+        except Exception as e:
+            logger.error("Get active session error: %s", e)
+            return None
+
     def get_current_session_id(self):
         if self.current_session_id:
             return self.current_session_id
@@ -314,7 +326,19 @@ class DatabaseManager:
                 self.current_session_id = result[0]
                 return self.current_session_id
 
-            # 2. Fallback to latest session in DB
+            # 2. Prefer the latest session that actually contains packets
+            query = """
+            SELECT id FROM sessions 
+            WHERE packet_count > 0 OR id IN (SELECT DISTINCT session_id FROM packets)
+            ORDER BY id DESC LIMIT 1
+            """
+            cur.execute(query)
+            result = cur.fetchone()
+            if result:
+                self.current_session_id = result[0]
+                return result[0]
+
+            # 3. Fallback to latest session in DB
             query = "SELECT id FROM sessions ORDER BY id DESC LIMIT 1"
             cur.execute(query)
             result = cur.fetchone()
@@ -482,7 +506,11 @@ class DatabaseManager:
     def insert_packet(self, packet_data):
         """Queue a packet for batch insertion."""
         if not self.current_session_id:
-            self.create_session()
+            active = self.get_active_session_id()
+            if active:
+                self.current_session_id = active
+            else:
+                self.create_session()
 
         packet_data['session_id'] = self.current_session_id
         self._packet_queue.append(packet_data)
@@ -546,7 +574,11 @@ class DatabaseManager:
     # =============== DNS LOGS ===============
     def insert_dns_log(self, domain, src_ip, dst_ip, query_type=None, is_response=0, answers=None, rcode=None):
         if not self.current_session_id:
-            self.create_session()
+            active = self.get_active_session_id()
+            if active:
+                self.current_session_id = active
+            else:
+                self.create_session()
 
         session_id = self.current_session_id
         current_time = time.time()
@@ -605,29 +637,31 @@ class DatabaseManager:
 
     def get_dns_logs(self, limit=50, session_only=True):
         try:
+            conn = self._get_connection()
+            conn.row_factory = sqlite3.Row
+            result = []
+
             if session_only:
                 session_id = self.current_session_id or self.get_current_session_id()
-                if not session_id:
-                    return []
-                query = """
-                SELECT id, session_id, timestamp, src_ip, dst_ip, domain, query_type, is_response, answer_records, ttl, rcode,
-                       datetime(timestamp, 'unixepoch', 'localtime') as time_local
-                FROM dns_logs WHERE session_id = ? ORDER BY timestamp DESC LIMIT ?
-                """
-                conn = self._get_connection()
-                conn.row_factory = sqlite3.Row
-                cur = conn.execute(query, (session_id, limit))
-            else:
+                if session_id:
+                    query = """
+                    SELECT id, session_id, timestamp, src_ip, dst_ip, domain, query_type, is_response, answer_records, ttl, rcode,
+                           datetime(timestamp, 'unixepoch', 'localtime') as time_local
+                    FROM dns_logs WHERE session_id = ? ORDER BY timestamp DESC LIMIT ?
+                    """
+                    cur = conn.execute(query, (session_id, limit))
+                    result = [dict(row) for row in cur.fetchall()]
+
+            # If session_only returned nothing or session_only is False, get latest across all sessions
+            if not result:
                 query = """
                 SELECT id, session_id, timestamp, src_ip, dst_ip, domain, query_type, is_response, answer_records, ttl, rcode,
                        datetime(timestamp, 'unixepoch', 'localtime') as time_local
                 FROM dns_logs ORDER BY timestamp DESC LIMIT ?
                 """
-                conn = self._get_connection()
-                conn.row_factory = sqlite3.Row
                 cur = conn.execute(query, (limit,))
+                result = [dict(row) for row in cur.fetchall()]
 
-            result = [dict(row) for row in cur.fetchall()]
             conn.row_factory = None
             for record in result:
                 if record.get('answer_records'):
@@ -642,17 +676,15 @@ class DatabaseManager:
 
     def get_dns_count(self, session_only=True):
         try:
+            conn = self._get_connection()
             if session_only:
                 session_id = self.current_session_id or self.get_current_session_id()
-                if not session_id:
-                    return 0
-                query = "SELECT COUNT(*) FROM dns_logs WHERE session_id = ?"
-                conn = self._get_connection()
-                cur = conn.execute(query, (session_id,))
-            else:
-                query = "SELECT COUNT(*) FROM dns_logs"
-                conn = self._get_connection()
-                cur = conn.execute(query)
+                if session_id:
+                    cur = conn.execute("SELECT COUNT(*) FROM dns_logs WHERE session_id = ?", (session_id,))
+                    count = cur.fetchone()[0]
+                    if count > 0:
+                        return count
+            cur = conn.execute("SELECT COUNT(*) FROM dns_logs")
             return cur.fetchone()[0]
         except Exception as e:
             logger.error("Get DNS count error: %s", e)
@@ -743,26 +775,36 @@ class DatabaseManager:
         return self.upsert_tcp_session(session_data)
 
     def get_tcp_sessions(self, limit=100, status=None):
-        """Get TCP sessions for current session."""
-        session_id = self.current_session_id or self.get_current_session_id()
-        if not session_id:
-            return []
-
-        query = "SELECT * FROM tcp_sessions WHERE session_id = ?"
-        params = [session_id]
-
-        if status:
-            query += " AND status = ?"
-            params.append(status)
-
-        query += " ORDER BY last_seen DESC LIMIT ?"
-        params.append(limit)
-
+        """Get TCP sessions for current session, fallback to all sessions if empty."""
         try:
+            session_id = self.current_session_id or self.get_current_session_id()
             conn = self._get_connection()
             conn.row_factory = sqlite3.Row
-            cur = conn.execute(query, params)
-            result = [dict(row) for row in cur.fetchall()]
+            result = []
+
+            if session_id:
+                query = "SELECT * FROM tcp_sessions WHERE session_id = ?"
+                params = [session_id]
+                if status:
+                    query += " AND status = ?"
+                    params.append(status)
+                query += " ORDER BY last_seen DESC LIMIT ?"
+                params.append(limit)
+                cur = conn.execute(query, params)
+                result = [dict(row) for row in cur.fetchall()]
+
+            # Fallback to all sessions if none found for current session
+            if not result:
+                query = "SELECT * FROM tcp_sessions"
+                params = []
+                if status:
+                    query += " WHERE status = ?"
+                    params.append(status)
+                query += " ORDER BY last_seen DESC LIMIT ?"
+                params.append(limit)
+                cur = conn.execute(query, params)
+                result = [dict(row) for row in cur.fetchall()]
+
             conn.row_factory = None
             return result
         except Exception as e:
@@ -772,21 +814,37 @@ class DatabaseManager:
     def get_tcp_session_stats(self):
         """Get TCP session statistics."""
         session_id = self.current_session_id or self.get_current_session_id()
-        if not session_id:
-            return {'total': 0, 'active': 0, 'closed': 0, 'reset': 0}
-
-        query = """
-        SELECT
-            COUNT(*) as total,
-            SUM(CASE WHEN status = 'active' OR status = 'established' OR status = 'syn_sent' THEN 1 ELSE 0 END) as active,
-            SUM(CASE WHEN status = 'closed' THEN 1 ELSE 0 END) as closed,
-            SUM(CASE WHEN status = 'reset' THEN 1 ELSE 0 END) as reset
-        FROM tcp_sessions
-        WHERE session_id = ?
-        """
         try:
             conn = self._get_connection()
-            cur = conn.execute(query, (session_id,))
+            if session_id:
+                query = """
+                SELECT
+                    COUNT(*) as total,
+                    SUM(CASE WHEN status = 'active' OR status = 'established' OR status = 'syn_sent' THEN 1 ELSE 0 END) as active,
+                    SUM(CASE WHEN status = 'closed' THEN 1 ELSE 0 END) as closed,
+                    SUM(CASE WHEN status = 'reset' THEN 1 ELSE 0 END) as reset
+                FROM tcp_sessions
+                WHERE session_id = ?
+                """
+                cur = conn.execute(query, (session_id,))
+                result = cur.fetchone()
+                if result and result[0] and result[0] > 0:
+                    return {
+                        'total': result[0] or 0,
+                        'active': result[1] or 0,
+                        'closed': result[2] or 0,
+                        'reset': result[3] or 0
+                    }
+
+            query_all = """
+            SELECT
+                COUNT(*) as total,
+                SUM(CASE WHEN status = 'active' OR status = 'established' OR status = 'syn_sent' THEN 1 ELSE 0 END) as active,
+                SUM(CASE WHEN status = 'closed' THEN 1 ELSE 0 END) as closed,
+                SUM(CASE WHEN status = 'reset' THEN 1 ELSE 0 END) as reset
+            FROM tcp_sessions
+            """
+            cur = conn.execute(query_all)
             result = cur.fetchone()
             return {
                 'total': result[0] or 0,
@@ -1002,20 +1060,32 @@ class DatabaseManager:
 
     def get_traffic_by_hour(self):
         session_id = self.current_session_id or self.get_current_session_id()
-        if not session_id:
-            return []
-        query = """
-        SELECT strftime('%Y-%m-%d %H:00:00', datetime(timestamp, 'unixepoch', 'localtime')) as time_bucket,
-               strftime('%H:00', datetime(timestamp, 'unixepoch', 'localtime')) as hour_label,
-               COUNT(*) as count, SUM(length) as bytes
-        FROM packets WHERE session_id = ?
-        GROUP BY time_bucket ORDER BY time_bucket DESC LIMIT 168
-        """
         try:
             conn = self._get_connection()
             conn.row_factory = sqlite3.Row
-            cur = conn.execute(query, (session_id,))
-            result = [dict(row) for row in cur.fetchall()]
+            result = []
+            if session_id:
+                query = """
+                SELECT strftime('%Y-%m-%d %H:00:00', datetime(timestamp, 'unixepoch', 'localtime')) as time_bucket,
+                       strftime('%H:00', datetime(timestamp, 'unixepoch', 'localtime')) as hour_label,
+                       COUNT(*) as count, SUM(length) as bytes
+                FROM packets WHERE session_id = ?
+                GROUP BY time_bucket ORDER BY time_bucket DESC LIMIT 168
+                """
+                cur = conn.execute(query, (session_id,))
+                result = [dict(row) for row in cur.fetchall()]
+
+            if not result:
+                query = """
+                SELECT strftime('%Y-%m-%d %H:00:00', datetime(timestamp, 'unixepoch', 'localtime')) as time_bucket,
+                       strftime('%H:00', datetime(timestamp, 'unixepoch', 'localtime')) as hour_label,
+                       COUNT(*) as count, SUM(length) as bytes
+                FROM packets
+                GROUP BY time_bucket ORDER BY time_bucket DESC LIMIT 168
+                """
+                cur = conn.execute(query)
+                result = [dict(row) for row in cur.fetchall()]
+
             conn.row_factory = None
             return result
         except Exception as e:
@@ -1024,19 +1094,30 @@ class DatabaseManager:
 
     def get_traffic_by_day(self):
         session_id = self.current_session_id or self.get_current_session_id()
-        if not session_id:
-            return []
-        query = """
-        SELECT strftime('%Y-%m-%d', datetime(timestamp, 'unixepoch', 'localtime')) as date,
-               COUNT(*) as count, SUM(length) as bytes, COUNT(DISTINCT src_ip) as unique_hosts
-        FROM packets WHERE session_id = ?
-        GROUP BY date ORDER BY date DESC LIMIT 90
-        """
         try:
             conn = self._get_connection()
             conn.row_factory = sqlite3.Row
-            cur = conn.execute(query, (session_id,))
-            result = [dict(row) for row in cur.fetchall()]
+            result = []
+            if session_id:
+                query = """
+                SELECT strftime('%Y-%m-%d', datetime(timestamp, 'unixepoch', 'localtime')) as date,
+                       COUNT(*) as count, SUM(length) as bytes, COUNT(DISTINCT src_ip) as unique_hosts
+                FROM packets WHERE session_id = ?
+                GROUP BY date ORDER BY date DESC LIMIT 90
+                """
+                cur = conn.execute(query, (session_id,))
+                result = [dict(row) for row in cur.fetchall()]
+
+            if not result:
+                query = """
+                SELECT strftime('%Y-%m-%d', datetime(timestamp, 'unixepoch', 'localtime')) as date,
+                       COUNT(*) as count, SUM(length) as bytes, COUNT(DISTINCT src_ip) as unique_hosts
+                FROM packets
+                GROUP BY date ORDER BY date DESC LIMIT 90
+                """
+                cur = conn.execute(query)
+                result = [dict(row) for row in cur.fetchall()]
+
             conn.row_factory = None
             return result
         except Exception as e:
@@ -1045,21 +1126,34 @@ class DatabaseManager:
 
     def get_traffic_by_week(self):
         session_id = self.current_session_id or self.get_current_session_id()
-        if not session_id:
-            return []
-        query = """
-        SELECT strftime('%Y-W%W', datetime(timestamp, 'unixepoch', 'localtime')) as week,
-               MIN(date(datetime(timestamp, 'unixepoch', 'localtime'))) as start_date,
-               MAX(date(datetime(timestamp, 'unixepoch', 'localtime'))) as end_date,
-               COUNT(*) as count, SUM(length) as bytes, COUNT(DISTINCT src_ip) as unique_hosts
-        FROM packets WHERE session_id = ?
-        GROUP BY week ORDER BY week DESC LIMIT 52
-        """
         try:
             conn = self._get_connection()
             conn.row_factory = sqlite3.Row
-            cur = conn.execute(query, (session_id,))
-            result = [dict(row) for row in cur.fetchall()]
+            result = []
+            if session_id:
+                query = """
+                SELECT strftime('%Y-W%W', datetime(timestamp, 'unixepoch', 'localtime')) as week,
+                       MIN(date(datetime(timestamp, 'unixepoch', 'localtime'))) as start_date,
+                       MAX(date(datetime(timestamp, 'unixepoch', 'localtime'))) as end_date,
+                       COUNT(*) as count, SUM(length) as bytes, COUNT(DISTINCT src_ip) as unique_hosts
+                FROM packets WHERE session_id = ?
+                GROUP BY week ORDER BY week DESC LIMIT 52
+                """
+                cur = conn.execute(query, (session_id,))
+                result = [dict(row) for row in cur.fetchall()]
+
+            if not result:
+                query = """
+                SELECT strftime('%Y-W%W', datetime(timestamp, 'unixepoch', 'localtime')) as week,
+                       MIN(date(datetime(timestamp, 'unixepoch', 'localtime'))) as start_date,
+                       MAX(date(datetime(timestamp, 'unixepoch', 'localtime'))) as end_date,
+                       COUNT(*) as count, SUM(length) as bytes, COUNT(DISTINCT src_ip) as unique_hosts
+                FROM packets
+                GROUP BY week ORDER BY week DESC LIMIT 52
+                """
+                cur = conn.execute(query)
+                result = [dict(row) for row in cur.fetchall()]
+
             conn.row_factory = None
             return result
         except Exception as e:
@@ -1068,19 +1162,30 @@ class DatabaseManager:
 
     def get_traffic_by_month(self):
         session_id = self.current_session_id or self.get_current_session_id()
-        if not session_id:
-            return []
-        query = """
-        SELECT strftime('%Y-%m', datetime(timestamp, 'unixepoch', 'localtime')) as month,
-               COUNT(*) as count, SUM(length) as bytes, COUNT(DISTINCT src_ip) as unique_hosts
-        FROM packets WHERE session_id = ?
-        GROUP BY month ORDER BY month DESC LIMIT 24
-        """
         try:
             conn = self._get_connection()
             conn.row_factory = sqlite3.Row
-            cur = conn.execute(query, (session_id,))
-            result = [dict(row) for row in cur.fetchall()]
+            result = []
+            if session_id:
+                query = """
+                SELECT strftime('%Y-%m', datetime(timestamp, 'unixepoch', 'localtime')) as month,
+                       COUNT(*) as count, SUM(length) as bytes, COUNT(DISTINCT src_ip) as unique_hosts
+                FROM packets WHERE session_id = ?
+                GROUP BY month ORDER BY month DESC LIMIT 24
+                """
+                cur = conn.execute(query, (session_id,))
+                result = [dict(row) for row in cur.fetchall()]
+
+            if not result:
+                query = """
+                SELECT strftime('%Y-%m', datetime(timestamp, 'unixepoch', 'localtime')) as month,
+                       COUNT(*) as count, SUM(length) as bytes, COUNT(DISTINCT src_ip) as unique_hosts
+                FROM packets
+                GROUP BY month ORDER BY month DESC LIMIT 24
+                """
+                cur = conn.execute(query)
+                result = [dict(row) for row in cur.fetchall()]
+
             conn.row_factory = None
             return result
         except Exception as e:

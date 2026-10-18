@@ -186,10 +186,12 @@ def live_stats():
         cpu_usage = 0
         memory_usage = 0
     
-    if not session_id:
+    total_db_packets = db.get_packet_count()
+    if not session_id and total_db_packets == 0:
         return jsonify({
             'status': 'no_session',
-            'message': 'No active session',
+            'message': 'No active session or packets. Click Start or Generate Demo Data.',
+            'is_running': False,
             'cpu_usage': round(cpu_usage, 1),
             'memory_usage': round(memory_usage, 1),
             'total_packets': 0,
@@ -206,7 +208,17 @@ def live_stats():
             'top_destination_ips': []
         }), 200
     
-    session_stats = db.get_session_stats(session_id)
+    session_stats = db.get_session_stats(session_id) if session_id else None
+    if not session_stats or session_stats.get('total_packets', 0) == 0:
+        if total_db_packets > 0:
+            conn = db._get_connection()
+            b_res = conn.execute("SELECT SUM(length) FROM packets").fetchone()
+            total_bytes = b_res[0] if b_res and b_res[0] else 0
+            session_stats = {
+                'total_packets': total_db_packets,
+                'total_bytes': total_bytes
+            }
+
     proto_counts = db.get_protocol_counts()
     top_src = db.get_top_ips('src_ip', 5)
     top_dst = db.get_top_ips('dst_ip', 5)
@@ -544,6 +556,35 @@ def get_interfaces():
     except Exception as e:
         logger.error(f"Error getting interfaces: {e}")
         return jsonify([]), 500
+
+
+# ============================================
+# 🔥 DEMO TRAFFIC GENERATION API
+# ============================================
+@api_bp.route('/demo/generate', methods=['POST', 'GET'])
+def generate_demo():
+    """Endpoint to generate realistic SOC demo network traffic and alerts."""
+    try:
+        from utils.demo_generator import generate_demo_traffic
+        count = request.args.get('count', 120, type=int)
+        if request.is_json:
+            data = request.get_json(silent=True) or {}
+            count = data.get('count', count)
+        result = generate_demo_traffic(db, alert_engine, count=count)
+        return jsonify(result), 200
+    except Exception as e:
+        logger.error(f"Error generating demo data: {e}", exc_info=True)
+        return jsonify({'status': 'error', 'message': str(e)}), 500
+
+
+@api_bp.route('/demo/status', methods=['GET'])
+def demo_status():
+    """Check how many packets and alerts are currently in the database."""
+    return jsonify({
+        'status': 'success',
+        'packet_count': db.get_packet_count(),
+        'has_data': db.get_packet_count() > 0
+    })
 
 
 @api_bp.route('/recent-packets', methods=['GET'])

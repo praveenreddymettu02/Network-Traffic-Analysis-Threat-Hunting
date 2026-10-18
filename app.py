@@ -24,6 +24,16 @@ def create_app():
     except Exception as e:
         logger.error(f"Failed to start alert engine: {e}")
 
+    # Auto-seed realistic demo data if database is empty (e.g. fresh clone from GitHub)
+    try:
+        from database.db_manager import DatabaseManager
+        from utils.demo_generator import seed_demo_data_if_empty
+        from routes.api import alert_engine
+        db = DatabaseManager()
+        seed_demo_data_if_empty(db, alert_engine)
+    except Exception as e:
+        logger.warning(f"Could not check/seed demo data: {e}")
+
     logger.info("Network Traffic Analysis App started.")
     return app
 

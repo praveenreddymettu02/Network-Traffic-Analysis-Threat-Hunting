@@ -1,6 +1,11 @@
 import threading
 import time
-import psutil
+try:
+    import psutil
+    PSUTIL_AVAILABLE = True
+except ImportError:
+    psutil = None
+    PSUTIL_AVAILABLE = False
 from scapy.all import (
     sniff,
     get_if_list,
@@ -294,10 +299,15 @@ class CaptureManager:
                     self.running = False
                     break
 
-            # Close inactive TCP sessions (300s timeout)
-            if self.session_id:
-                self.tcp_tracker.close_inactive_sessions(300)
+            # Only end session here if stopped naturally (e.g. packet count reached)
+            if self.session_id and not self._stop_event.is_set():
+                self.db._flush_packet_queue()
+                try:
+                    self.tcp_tracker.close_inactive_sessions(300)
+                except Exception:
+                    pass
                 self.db.end_session(self.session_id)
+                self.session_id = None
             self.running = False
             logger.info("Capture stopped.")
 
@@ -313,16 +323,21 @@ class CaptureManager:
         self._stop_event.set()
         self.running = False
 
-        # Close inactive TCP sessions
+        # Wait for sniffer thread to fully terminate first so no lingering packets arrive
+        if self.sniffer_thread and self.sniffer_thread.is_alive():
+            self.sniffer_thread.join(timeout=3)
+
+        # Flush any remaining queued packets
+        self.db._flush_packet_queue()
+
+        # Close inactive TCP sessions and finalize session in DB
         if self.session_id:
-            self.tcp_tracker.close_inactive_sessions(300)
-            # Flush pending packets before ending session
-            self.db._flush_packet_queue()
+            try:
+                self.tcp_tracker.close_inactive_sessions(300)
+            except Exception:
+                pass
             self.db.end_session(self.session_id)
             self.session_id = None
-
-        if self.sniffer_thread and self.sniffer_thread.is_alive():
-            self.sniffer_thread.join(timeout=2)
 
         self.start_time = None
 
@@ -355,9 +370,9 @@ class CaptureManager:
         interfaces = []
         try:
             scapy_ifaces = get_if_list()
-            # Get psutil network info for enrichment
-            ps_addrs = psutil.net_if_addrs()
-            ps_stats = psutil.net_if_stats()
+            # Get psutil network info for enrichment if available
+            ps_addrs = psutil.net_if_addrs() if psutil else {}
+            ps_stats = psutil.net_if_stats() if psutil else {}
 
             for iface_name in scapy_ifaces:
                 # Skip loopback

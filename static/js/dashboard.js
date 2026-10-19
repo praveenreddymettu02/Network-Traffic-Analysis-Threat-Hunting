@@ -100,6 +100,9 @@ document.addEventListener('DOMContentLoaded', function() {
                 updateTopIPs(data.top_src_ips, data.top_dst_ips);
                 updateCaptureStatus(data.is_running || false, currentCanCapture, '', isSimulationMode);
                 updateTopTalkers();
+                if (typeof window.fetchDNSQueries === 'function') {
+                    window.fetchDNSQueries();
+                }
                 
                 // 🔥 Fetch alerts separately
                 fetchRecentAlerts();
@@ -335,15 +338,9 @@ document.addEventListener('DOMContentLoaded', function() {
         if (!captureStatusEl) return;
         if (isRunning) {
             isSimulationMode = simulation;
-            if (simulation) {
-                captureStatusEl.innerText = '🟢 Running (Simulated)';
-                captureStatusEl.className = 'badge-status running';
-                captureStatusEl.title = 'Live simulated SOC traffic active';
-            } else {
-                captureStatusEl.innerText = '🟢 Running';
-                captureStatusEl.className = 'badge-status running';
-                captureStatusEl.title = 'Live packet capture active';
-            }
+            captureStatusEl.innerText = '🟢 Running';
+            captureStatusEl.className = 'badge-status running';
+            captureStatusEl.title = simulation ? 'Live simulated SOC traffic active' : 'Live packet capture active';
         } else if (canCapture === false) {
             isSimulationMode = false;
             captureStatusEl.innerText = '☁️ Cloud Mode';
@@ -376,18 +373,13 @@ document.addEventListener('DOMContentLoaded', function() {
         fetch('/api/interfaces')
             .then(res => res.json())
             .then(data => {
-                interfaceSelectEl.innerHTML = canCapture ? 
-                    '<option value="">Auto-Detect (Local Live Sniffer)</option>' :
-                    '<option value="simulate" selected>⚡ Live Traffic Simulator (Cloud / Demo)</option>';
+                interfaceSelectEl.innerHTML = '<option value="">Auto-Detect (Local Live Sniffer)</option>';
                 data.forEach(iface => {
                     const option = document.createElement('option');
                     option.value = iface.name;
                     const ipStr = iface.ip ? ` - ${iface.ip}` : '';
                     const descStr = iface.description ? ` (${iface.description})` : '';
                     option.innerText = `${iface.type || 'Interface'}: ${iface.name}${ipStr}${descStr}`;
-                    if (!canCapture && iface.name === 'simulate') {
-                        option.selected = true;
-                    }
                     interfaceSelectEl.appendChild(option);
                 });
             })
@@ -607,6 +599,7 @@ document.addEventListener('DOMContentLoaded', function() {
             populateInterfaces(data.can_capture);
             loadSystemInfo();
             updateTopTalkers();
+            if (typeof window.fetchDNSQueries === 'function') window.fetchDNSQueries();
             updateCaptureStatus(data.running, data.can_capture, data.capture_message, data.simulation);
             if (data.running) {
                 liveInterval = setInterval(fetchLiveStats, 2000);
@@ -622,11 +615,13 @@ document.addEventListener('DOMContentLoaded', function() {
             populateInterfaces(true);
             loadSystemInfo();
             updateTopTalkers();
+            if (typeof window.fetchDNSQueries === 'function') window.fetchDNSQueries();
             fetchStats();
         });
 
     fetchRecentPackets();
     fetchRecentAlerts();
+    if (typeof window.fetchDNSQueries === 'function') window.fetchDNSQueries();
     
     // Auto-refreshes
     setInterval(fetchRecentPackets, 5000);

@@ -7,30 +7,33 @@ document.addEventListener('DOMContentLoaded', function() {
     let isCaptureRunning = false;
 
     function fetchDNSQueries() {
-        console.log('Fetching DNS queries...');
         fetch('/api/dns/live')
             .then(response => {
                 if (!response.ok) throw new Error(`HTTP ${response.status}`);
                 return response.json();
             })
             .then(data => {
-                console.log('DNS data:', data);
                 if (data.status === 'success') {
                     updateDNSTable(data.queries);
                     updateDNSBadge(data.count);
                 }
             })
             .catch(err => {
-                console.error('DNS fetch error:', err);
+                console.warn('DNS fetch error:', err);
             });
     }
+
+    // Expose globally so dashboard.js can refresh DNS live
+    window.fetchDNSQueries = fetchDNSQueries;
 
     function updateDNSTable(queries) {
         const tbody = document.getElementById('dns-body');
         if (!tbody) return;
 
+        const isDashboard = document.querySelector('#dns-table thead th') !== null;
         if (!queries || queries.length === 0) {
-            tbody.innerHTML = '<tr><td colspan="8" class="text-center text-muted">No DNS queries yet</td></tr>';
+            const cols = isDashboard ? 3 : 8;
+            tbody.innerHTML = `<tr><td colspan="${cols}" class="text-center text-muted">No DNS queries yet</td></tr>`;
             return;
         }
 

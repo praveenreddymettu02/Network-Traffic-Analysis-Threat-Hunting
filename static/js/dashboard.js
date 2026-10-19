@@ -565,6 +565,39 @@ document.addEventListener('DOMContentLoaded', function() {
         });
     });
 
+    // 🗑️ Clear / Reset All Data
+    document.getElementById('btn-clear-data')?.addEventListener('click', function() {
+        if (!confirm('Are you sure you want to clear all data and start clean?')) return;
+        const btn = this;
+        const origHtml = btn.innerHTML;
+        btn.disabled = true;
+        btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Clearing...';
+
+        fetch('/api/data/reset', { method: 'POST' })
+            .then(res => res.json())
+            .then(data => {
+                btn.innerHTML = '<i class="fas fa-check"></i> Cleared!';
+                setTimeout(() => {
+                    btn.innerHTML = origHtml;
+                    btn.disabled = false;
+                }, 1000);
+
+                // Instantly refresh all views to empty / clean state
+                fetchLiveStats();
+                fetchRecentPackets();
+                fetchRecentAlerts();
+                updateTopTalkers();
+                if (typeof window.fetchDNSQueries === 'function') {
+                    window.fetchDNSQueries();
+                }
+            })
+            .catch(err => {
+                btn.innerHTML = origHtml;
+                btn.disabled = false;
+                alert('Error clearing data: ' + err.message);
+            });
+    });
+
     function updateCaptureStatusFromAPI() {
         fetch('/api/capture/status')
             .then(response => response.json())

@@ -15,8 +15,10 @@ import os
 import sys
 import time
 import json
+import socket
 import argparse
 import logging
+from urllib.parse import urlparse
 from queue import Queue, Empty
 from threading import Thread, Event
 
@@ -114,13 +116,37 @@ def extract_fallback_packet(packet):
             pass
 
     tls_data = None
-    if packet.haslayer('TLS_Ext_ServerName'):
+    if packet.haslayer('TCP') and packet.haslayer('Raw'):
+        try:
+            payload = bytes(packet['Raw'].load)
+            # 1. TLS SNI for HTTPS visits
+            if len(payload) >= 6 and payload[0] == 22 and payload[5] == 1:
+                from parser.tls_parser import TLSParser
+                sni = TLSParser._extract_sni(payload)
+                if sni:
+                    tls_data = {'sni': str(sni)}
+                    if not dns_data:
+                        dns_data = {'domain': str(sni), 'is_response': 0, 'query_type': 'SNI'}
+            # 2. HTTP Host header for web visits
+            elif b'Host: ' in payload:
+                pos = payload.find(b'Host: ') + 6
+                end_pos = payload.find(b'\r\n', pos)
+                if end_pos > pos:
+                    host = payload[pos:end_pos].decode('utf-8', errors='ignore').strip()
+                    if host and not dns_data:
+                        dns_data = {'domain': host, 'is_response': 0, 'query_type': 'HTTP'}
+        except Exception:
+            pass
+
+    if not tls_data and packet.haslayer('TLS_Ext_ServerName'):
         try:
             sni = packet['TLS_Ext_ServerName'].servernames[0].servername
             if isinstance(sni, bytes):
                 sni = sni.decode('utf-8', errors='ignore')
             if sni:
                 tls_data = {'sni': str(sni)}
+                if not dns_data:
+                    dns_data = {'domain': str(sni), 'is_response': 0, 'query_type': 'SNI'}
         except Exception:
             pass
 
@@ -171,6 +197,17 @@ class RemoteCaptureAgent:
         self.interval = max(0.5, interval)
         self.dry_run = dry_run
         
+        self.session = requests.Session()
+        self.server_host = urlparse(self.server_url).hostname
+        self.server_ips = set()
+        if self.server_host:
+            try:
+                for res in socket.getaddrinfo(self.server_host, None):
+                    self.server_ips.add(res[4][0])
+            except Exception:
+                pass
+        logger.info(f"Target backend: {self.server_url} (Resolved server IPs to ignore: {self.server_ips})")
+        
         self.queue = Queue(maxsize=10000)
         self.stop_event = Event()
         self.parser = PacketParser() if HAS_LOCAL_PARSER else None
@@ -189,7 +226,7 @@ class RemoteCaptureAgent:
         url = f"{self.server_url}/api/ingest/status"
         headers = {'X-API-Key': self.api_key}
         try:
-            resp = requests.get(url, headers=headers, timeout=10)
+            resp = self.session.get(url, headers=headers, timeout=10)
             if resp.status_code == 200:
                 data = resp.json()
                 logger.info(f"Connected to backend! Status: {data.get('status')} | Ingested packets in DB: {data.get('total_packets', 0)}")
@@ -227,6 +264,18 @@ class RemoteCaptureAgent:
     def on_packet(self, pkt):
         """Callback for incoming Scapy packet."""
         try:
+            # Ignore communication with the ingestion server itself to avoid infinite feedback loop
+            if pkt.haslayer('IP'):
+                src = pkt['IP'].src
+                dst = pkt['IP'].dst
+                if src in self.server_ips or dst in self.server_ips:
+                    return
+            elif pkt.haslayer('IPv6'):
+                src = pkt['IPv6'].src
+                dst = pkt['IPv6'].dst
+                if src in self.server_ips or dst in self.server_ips:
+                    return
+
             self.total_captured += 1
             data = self.parse_packet_data(pkt)
             if self.dry_run:
@@ -236,7 +285,7 @@ class RemoteCaptureAgent:
             try:
                 self.queue.put_nowait(data)
             except Exception:
-                logger.warning("Packet queue full; dropping packet to maintain agent stability.")
+                pass
         except Exception as e:
             logger.error(f"Error processing packet: {e}")
 
@@ -249,8 +298,13 @@ class RemoteCaptureAgent:
             try:
                 # Wait for items with short timeout
                 try:
-                    item = self.queue.get(timeout=0.2)
+                    item = self.queue.get(timeout=0.1)
                     batch.append(item)
+                    while len(batch) < 100:
+                        try:
+                            batch.append(self.queue.get_nowait())
+                        except Empty:
+                            break
                 except Empty:
                     pass
 
@@ -279,7 +333,7 @@ class RemoteCaptureAgent:
         payload = json.dumps({'packets': safe_batch})
 
         try:
-            resp = requests.post(url, data=payload, headers=headers, timeout=15)
+            resp = self.session.post(url, data=payload, headers=headers, timeout=15)
             if resp.status_code == 200:
                 res_data = resp.json()
                 count = res_data.get('ingested', len(batch))
@@ -294,12 +348,21 @@ class RemoteCaptureAgent:
 
     def run_live(self, interface=None, count=0):
         """Run live sniffing."""
+        if not interface:
+            try:
+                from scapy.all import get_working_if
+                working_if = get_working_if()
+                if working_if:
+                    interface = getattr(working_if, 'name', None) or str(working_if)
+            except Exception:
+                pass
+
         if not self.dry_run:
             self.sender_thread = Thread(target=self.sender_loop, daemon=True)
             self.sender_thread.start()
 
         iface_str = interface or "default interface"
-        logger.info(f"Starting live packet capture on {iface_str} (Target: {self.server_url})...")
+        logger.info(f"Starting live packet capture on interface '{iface_str}' (Target: {self.server_url})...")
         try:
             sniff_kwargs = {
                 'prn': self.on_packet,

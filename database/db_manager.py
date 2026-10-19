@@ -1262,3 +1262,23 @@ class DatabaseManager:
         except Exception as e:
             logger.error("Search packets error: %s", e)
             return []
+
+    def clear_all_data(self):
+        """Reset and wipe all packets, dns_logs, alerts, and sessions for a clean start."""
+        with self._lock:
+            try:
+                conn = self._get_connection()
+                cur = conn.cursor()
+                for table in ['packets', 'dns_logs', 'tcp_sessions', 'alerts', 'capture_sessions']:
+                    try:
+                        cur.execute(f"DELETE FROM {table}")
+                    except Exception:
+                        pass
+                conn.commit()
+                self.current_session_id = None
+                self._packet_queue.clear()
+                logger.info("All traffic, DNS logs, and alerts cleared from database.")
+                return True
+            except Exception as e:
+                logger.error("Failed to clear database: %s", e)
+                return False

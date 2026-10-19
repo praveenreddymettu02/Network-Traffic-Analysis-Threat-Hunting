@@ -822,6 +822,23 @@ def demo_status():
     })
 
 
+@api_bp.route('/data/reset', methods=['POST', 'GET'])
+@api_bp.route('/data/clear', methods=['POST', 'GET'])
+def reset_all_data():
+    """Clear all historical and demo data so only real live browsing traffic shows."""
+    try:
+        success = db.clear_all_data()
+        global _last_ingest_time
+        _last_ingest_time = 0
+        return jsonify({
+            'status': 'success' if success else 'error',
+            'message': 'All historical and demo data wiped cleanly. Ready for real live browsing traffic!'
+        }), 200
+    except Exception as e:
+        logger.error(f"Error resetting data: {e}")
+        return jsonify({'status': 'error', 'message': str(e)}), 500
+
+
 @api_bp.route('/recent-packets', methods=['GET'])
 def get_recent_packets_api():
     try:

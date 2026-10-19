@@ -19,7 +19,7 @@ class IPParser:
                     'protocol': ip.proto,
                     'length': ip.len,
                     'id': ip.id,
-                    'flags': ip.flags,
+                    'flags': int(ip.flags) if hasattr(ip.flags, '__int__') else str(ip.flags),
                     'frag': ip.frag
                 }
             elif packet.haslayer(IPv6):

@@ -14,6 +14,7 @@ Usage:
 import os
 import sys
 import time
+import json
 import argparse
 import logging
 from queue import Queue, Empty
@@ -142,6 +143,26 @@ def extract_fallback_packet(packet):
     return res
 
 
+def make_json_safe(obj):
+    """Recursively convert Scapy / non-primitive objects to JSON-serializable types."""
+    if obj is None:
+        return None
+    if isinstance(obj, (bytes, bytearray)):
+        return obj.hex()[:500]
+    if isinstance(obj, (int, float, str, bool)):
+        return obj
+    if isinstance(obj, dict):
+        return {str(k): make_json_safe(v) for k, v in obj.items() if k != 'raw'}
+    if isinstance(obj, (list, tuple, set)):
+        return [make_json_safe(i) for i in obj]
+    if hasattr(obj, '__int__'):
+        try:
+            return int(obj)
+        except Exception:
+            return str(obj)
+    return str(obj)
+
+
 class RemoteCaptureAgent:
     def __init__(self, server_url, api_key, batch_size=25, interval=2.0, dry_run=False):
         self.server_url = server_url.rstrip('/')
@@ -254,10 +275,11 @@ class RemoteCaptureAgent:
             'Content-Type': 'application/json',
             'X-API-Key': self.api_key
         }
-        payload = {'packets': batch}
+        safe_batch = [make_json_safe(p) for p in batch]
+        payload = json.dumps({'packets': safe_batch})
 
         try:
-            resp = requests.post(url, json=payload, headers=headers, timeout=15)
+            resp = requests.post(url, data=payload, headers=headers, timeout=15)
             if resp.status_code == 200:
                 res_data = resp.json()
                 count = res_data.get('ingested', len(batch))

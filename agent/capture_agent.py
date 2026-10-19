@@ -96,6 +96,12 @@ def extract_fallback_packet(packet):
 
     raw_hex = bytes(packet).hex() if hasattr(packet, '__bytes__') else None
 
+    def _is_filtered_domain(domain_str):
+        if not domain_str:
+            return True
+        d = str(domain_str).lower().strip()
+        return any(noisy in d for noisy in ['nephobox.com', 'avcdn.net', 'clarity.ms'])
+
     dns_data = None
     if packet.haslayer('DNS'):
         try:
@@ -106,7 +112,7 @@ def extract_fallback_packet(packet):
                     qname = qname.decode('utf-8', errors='ignore').rstrip('.')
                 elif isinstance(qname, str):
                     qname = qname.rstrip('.')
-                if qname:
+                if qname and not _is_filtered_domain(qname):
                     dns_data = {
                         'domain': qname,
                         'is_response': getattr(dns, 'qr', 0),
@@ -123,7 +129,7 @@ def extract_fallback_packet(packet):
             if len(payload) >= 6 and payload[0] == 22 and payload[5] == 1:
                 from parser.tls_parser import TLSParser
                 sni = TLSParser._extract_sni(payload)
-                if sni:
+                if sni and not _is_filtered_domain(sni):
                     tls_data = {'sni': str(sni)}
                     if not dns_data:
                         dns_data = {'domain': str(sni), 'is_response': 0, 'query_type': 'SNI'}
@@ -133,7 +139,7 @@ def extract_fallback_packet(packet):
                 end_pos = payload.find(b'\r\n', pos)
                 if end_pos > pos:
                     host = payload[pos:end_pos].decode('utf-8', errors='ignore').strip()
-                    if host and not dns_data:
+                    if host and not _is_filtered_domain(host) and not dns_data:
                         dns_data = {'domain': host, 'is_response': 0, 'query_type': 'HTTP'}
         except Exception:
             pass
@@ -143,7 +149,7 @@ def extract_fallback_packet(packet):
             sni = packet['TLS_Ext_ServerName'].servernames[0].servername
             if isinstance(sni, bytes):
                 sni = sni.decode('utf-8', errors='ignore')
-            if sni:
+            if sni and not _is_filtered_domain(sni):
                 tls_data = {'sni': str(sni)}
                 if not dns_data:
                     dns_data = {'domain': str(sni), 'is_response': 0, 'query_type': 'SNI'}

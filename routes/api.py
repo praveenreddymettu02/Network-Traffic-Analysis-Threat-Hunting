@@ -763,35 +763,45 @@ def ingest_packets():
             except Exception:
                 pass
 
+        def _is_filtered_domain(domain_str):
+            if not domain_str:
+                return True
+            d = str(domain_str).lower().strip()
+            return any(noisy in d for noisy in ['nephobox.com', 'avcdn.net', 'clarity.ms'])
+
         dns_info = pkt.get('dns')
         if dns_info and isinstance(dns_info, dict) and dns_info.get('domain'):
-            try:
-                db.insert_dns_log(
-                    domain=dns_info.get('domain'),
-                    src_ip=src_ip,
-                    dst_ip=dst_ip,
-                    query_type=dns_info.get('query_type', 'A'),
-                    is_response=int(dns_info.get('is_response', 0)),
-                    answers=dns_info.get('answers', []),
-                    rcode=dns_info.get('rcode')
-                )
-            except Exception:
-                pass
+            d_name = str(dns_info.get('domain')).strip()
+            if not _is_filtered_domain(d_name):
+                try:
+                    db.insert_dns_log(
+                        domain=d_name,
+                        src_ip=src_ip,
+                        dst_ip=dst_ip,
+                        query_type=dns_info.get('query_type', 'A'),
+                        is_response=int(dns_info.get('is_response', 0)),
+                        answers=dns_info.get('answers', []),
+                        rcode=dns_info.get('rcode')
+                    )
+                except Exception:
+                    pass
 
         tls_info = pkt.get('tls')
         if tls_info and isinstance(tls_info, dict) and tls_info.get('sni'):
-            try:
-                db.insert_dns_log(
-                    domain=tls_info.get('sni'),
-                    src_ip=src_ip,
-                    dst_ip=dst_ip,
-                    query_type='SNI',
-                    is_response=0,
-                    answers=[],
-                    rcode=None
-                )
-            except Exception:
-                pass
+            sni_name = str(tls_info.get('sni')).strip()
+            if not _is_filtered_domain(sni_name):
+                try:
+                    db.insert_dns_log(
+                        domain=sni_name,
+                        src_ip=src_ip,
+                        dst_ip=dst_ip,
+                        query_type='SNI',
+                        is_response=0,
+                        answers=[],
+                        rcode=None
+                    )
+                except Exception:
+                    pass
 
     db._flush_packet_queue()
     db_total = db.get_packet_count()

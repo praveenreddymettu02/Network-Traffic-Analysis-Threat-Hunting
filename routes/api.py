@@ -503,6 +503,19 @@ def start_capture():
         count = data.get('count', 0)
         timeout = data.get('timeout', None)
         interface = data.get('interface')
+        simulate = data.get('simulate', False)
+
+        if simulate or (interface and str(interface).lower() in ('simulate', 'simulation', 'demo')):
+            success, message, session_id = capture_mgr.start_simulation()
+            if not success:
+                logger.warning(f"Simulation start rejected: {message}")
+                return jsonify({'status': 'error', 'message': message}), 400
+            return jsonify({
+                'status': 'started',
+                'mode': 'simulation',
+                'message': message,
+                'session_id': session_id
+            }), 200
 
         success, message, session_id = capture_mgr.start_capture(count=count, timeout=timeout, interface=interface)
         if not success:
@@ -516,6 +529,50 @@ def start_capture():
         }), 200
     except Exception as e:
         logger.error(f"Start capture error: {e}")
+        return jsonify({'status': 'error', 'message': str(e)}), 500
+
+
+@api_bp.route('/simulation/start', methods=['POST'])
+def start_simulation():
+    try:
+        success, message, session_id = capture_mgr.start_simulation()
+        if not success:
+            return jsonify({'status': 'error', 'message': message}), 400
+        return jsonify({
+            'status': 'started',
+            'mode': 'simulation',
+            'message': message,
+            'session_id': session_id
+        }), 200
+    except Exception as e:
+        logger.error(f"Start simulation error: {e}")
+        return jsonify({'status': 'error', 'message': str(e)}), 500
+
+
+@api_bp.route('/simulation/stop', methods=['POST'])
+def stop_simulation():
+    try:
+        session_id = capture_mgr.get_session_id()
+        success, message, ended_session = capture_mgr.stop_capture()
+        return jsonify({
+            'status': 'stopped' if success else 'stopping',
+            'message': message,
+            'session_id': ended_session or session_id
+        }), 200
+    except Exception as e:
+        logger.error(f"Stop simulation error: {e}")
+        return jsonify({'status': 'error', 'message': str(e)}), 500
+
+
+@api_bp.route('/capture/clear-error', methods=['POST'])
+def clear_capture_error():
+    try:
+        if hasattr(capture_mgr, 'clear_last_error'):
+            capture_mgr.clear_last_error()
+        else:
+            capture_mgr.last_error = None
+        return jsonify({'status': 'success', 'message': 'Last error cleared'}), 200
+    except Exception as e:
         return jsonify({'status': 'error', 'message': str(e)}), 500
 
 
@@ -544,6 +601,7 @@ def capture_status():
     can_cap, cap_reason = capture_mgr.can_capture()
     return jsonify({
         'running': capture_mgr.running,
+        'simulation': getattr(capture_mgr, 'simulation_mode', False),
         'packets_captured': capture_mgr.get_packet_count(),
         'session_id': session_id,
         'session_stats': session_stats,
@@ -558,10 +616,16 @@ def capture_status():
 def get_interfaces():
     try:
         interfaces = capture_mgr.get_interfaces()
+        has_sim = any(i.get('name') == 'simulate' for i in interfaces)
+        if not has_sim:
+            interfaces.append({
+                'name': 'simulate',
+                'description': '⚡ Live Traffic Simulator (Cloud / Demo)'
+            })
         return jsonify(interfaces)
     except Exception as e:
         logger.error(f"Error getting interfaces: {e}")
-        return jsonify([]), 500
+        return jsonify([{'name': 'simulate', 'description': '⚡ Live Traffic Simulator (Cloud / Demo)'}]), 200
 
 
 # ============================================

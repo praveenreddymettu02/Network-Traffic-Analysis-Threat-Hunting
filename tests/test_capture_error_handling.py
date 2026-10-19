@@ -107,6 +107,48 @@ class TestCaptureErrorHandling(unittest.TestCase):
         self.assertEqual(stats_after.get('active'), 2)
         self.assertEqual(stats_after.get('resolved'), 1)
 
+    def test_simulation_mode_in_container(self):
+        """Simulation mode should run and generate packets without raw sniffing."""
+        cm = CaptureManager(db_manager=self.db)
+        success, msg, session_id = cm.start_simulation()
+        self.assertTrue(success)
+        self.assertTrue(cm.running)
+        self.assertTrue(cm.simulation_mode)
+        self.assertIsNotNone(session_id)
+
+        # Stop simulation
+        stop_success, stop_msg, ended_id = cm.stop_capture()
+        self.assertTrue(stop_success)
+        self.assertFalse(cm.running)
+        self.assertFalse(cm.simulation_mode)
+
+    def test_simulation_api_endpoints(self):
+        """API endpoints /api/simulation/start and /stop should manage simulation session."""
+        start_res = self.client.post('/api/simulation/start')
+        self.assertEqual(start_res.status_code, 200)
+        start_data = start_res.get_json()
+        self.assertEqual(start_data.get('status'), 'started')
+        self.assertEqual(start_data.get('mode'), 'simulation')
+
+        # Status check
+        status_res = self.client.get('/api/capture/status')
+        status_data = status_res.get_json()
+        self.assertTrue(status_data.get('running'))
+        self.assertTrue(status_data.get('simulation'))
+
+        # Stop
+        stop_res = self.client.post('/api/simulation/stop')
+        self.assertEqual(stop_res.status_code, 200)
+        stop_data = stop_res.get_json()
+        self.assertEqual(stop_data.get('status'), 'stopped')
+
+    def test_clear_error_api(self):
+        """POST /api/capture/clear-error should clear last_error."""
+        routes.api.capture_mgr.last_error = "Sample error"
+        res = self.client.post('/api/capture/clear-error')
+        self.assertEqual(res.status_code, 200)
+        self.assertIsNone(routes.api.capture_mgr.last_error)
+
 
 if __name__ == '__main__':
     unittest.main()

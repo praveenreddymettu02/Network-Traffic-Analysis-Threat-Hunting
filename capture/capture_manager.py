@@ -42,6 +42,7 @@ class CaptureManager:
         # Initialize TCP Session Tracker
         self.tcp_tracker = TCPSessionTracker(self.db)
         self.running = False
+        self.simulation_mode = False
         self.sniffer_thread = None
         self.packet_count = 0
         self._count_lock = threading.Lock()
@@ -255,12 +256,171 @@ class CaptureManager:
 
         return True, "Packet capture supported"
 
-    def start_capture(self, count=0, timeout=None, interface=None):
+    def clear_last_error(self):
+        """Clear recorded last error string."""
+        self.last_error = None
+
+    def start_simulation(self):
+        """Start background simulated SOC traffic generation for container/cloud environments."""
+        if self.running:
+            return False, "Capture or simulation is already running", self.session_id
+
+        self.last_error = None
+        self.session_id = self.db.create_session()
+        if not self.session_id:
+            self.last_error = "Failed to create database capture session."
+            return False, self.last_error, None
+
+        self.running = True
+        self.simulation_mode = True
+        self.packet_count = 0
+        self.start_time = time.time()
+        self._stop_event.clear()
+
+        def simulation_loop():
+            logger.info("*** STARTING SOC TRAFFIC SIMULATION (Session %s) ***", self.session_id)
+            import random
+            internal_hosts = ['192.168.1.105', '192.168.1.110', '192.168.1.115', '10.0.0.45', '10.0.0.88']
+            external_endpoints = [
+                ('142.250.190.46', 443, 'TLS', 'google.com'),
+                ('140.82.121.4', 443, 'TLS', 'github.com'),
+                ('20.112.52.29', 443, 'TLS', 'microsoft.com'),
+                ('104.244.42.1', 443, 'TLS', 'api.twitter.com'),
+                ('93.184.216.34', 80, 'HTTP', 'example.com'),
+                ('8.8.8.8', 53, 'DNS', 'dns.google'),
+                ('1.1.1.1', 53, 'DNS', 'one.one.one.one'),
+                ('185.220.101.5', 8080, 'HTTP', 'c2-beacon-command.xyz'),
+                ('198.51.100.45', 22, 'TCP', 'malicious-scanner.net')
+            ]
+            dns_domains = [
+                'google.com', 'github.com', 'api.github.com', 'microsoft.com',
+                'cloudflare.com', 'c2-beacon-command.xyz', 'update.windows.com', 'cdn.jsdelivr.net'
+            ]
+            gateway_mac = '00:50:56:c0:00:01'
+
+            while self.running and not self._stop_event.is_set():
+                try:
+                    now_ts = time.time()
+                    batch_size = random.randint(2, 5)
+                    for _ in range(batch_size):
+                        endpoint = random.choice(external_endpoints)
+                        src_ip = random.choice(internal_hosts)
+                        dst_ip = endpoint[0]
+                        dst_port = endpoint[1]
+                        proto = endpoint[2]
+                        src_port = random.randint(49152, 65535)
+
+                        if proto == 'DNS' or random.random() < 0.2:
+                            q_domain = random.choice(dns_domains)
+                            pkt_data = {
+                                'session_id': self.session_id,
+                                'timestamp': now_ts,
+                                'src_ip': src_ip,
+                                'dst_ip': '8.8.8.8',
+                                'src_mac': '00:1a:2b:3c:4d:5e',
+                                'dst_mac': gateway_mac,
+                                'src_port': src_port,
+                                'dst_port': 53,
+                                'protocol': 'DNS',
+                                'length': random.randint(60, 95),
+                                'ttl': 64,
+                                'tcp_flags': None,
+                                'raw_data': None
+                            }
+                            self.db.insert_packet(pkt_data)
+                            with self._count_lock:
+                                self.packet_count += 1
+                            self.db.insert_dns_log(
+                                domain=q_domain,
+                                src_ip=src_ip,
+                                dst_ip='8.8.8.8',
+                                query_type='A',
+                                is_response=1,
+                                answers=[{'name': q_domain, 'type': 'A', 'ttl': 300, 'rdata': dst_ip}],
+                                rcode=0
+                            )
+                        elif proto == 'TLS':
+                            pkt_data = {
+                                'session_id': self.session_id,
+                                'timestamp': now_ts,
+                                'src_ip': src_ip,
+                                'dst_ip': dst_ip,
+                                'src_mac': '00:1a:2b:3c:4d:5e',
+                                'dst_mac': gateway_mac,
+                                'src_port': src_port,
+                                'dst_port': 443,
+                                'protocol': 'TLS',
+                                'length': random.randint(300, 1420),
+                                'ttl': 64,
+                                'tcp_flags': 'PSH, ACK',
+                                'raw_data': None
+                            }
+                            self.db.insert_packet(pkt_data)
+                            with self._count_lock:
+                                self.packet_count += 1
+                            self.tcp_tracker.process_packet(pkt_data)
+                        elif proto == 'HTTP':
+                            pkt_data = {
+                                'session_id': self.session_id,
+                                'timestamp': now_ts,
+                                'src_ip': src_ip,
+                                'dst_ip': dst_ip,
+                                'src_mac': '00:1a:2b:3c:4d:5e',
+                                'dst_mac': gateway_mac,
+                                'src_port': src_port,
+                                'dst_port': dst_port,
+                                'protocol': 'HTTP',
+                                'length': random.randint(250, 1150),
+                                'ttl': 64,
+                                'tcp_flags': 'PSH, ACK',
+                                'raw_data': None
+                            }
+                            self.db.insert_packet(pkt_data)
+                            with self._count_lock:
+                                self.packet_count += 1
+                            self.tcp_tracker.process_packet(pkt_data)
+                        else:
+                            pkt_data = {
+                                'session_id': self.session_id,
+                                'timestamp': now_ts,
+                                'src_ip': src_ip,
+                                'dst_ip': dst_ip,
+                                'src_mac': '00:1a:2b:3c:4d:5e',
+                                'dst_mac': gateway_mac,
+                                'src_port': src_port,
+                                'dst_port': dst_port,
+                                'protocol': proto,
+                                'length': random.randint(64, 850),
+                                'ttl': 64,
+                                'tcp_flags': 'ACK',
+                                'raw_data': None
+                            }
+                            self.db.insert_packet(pkt_data)
+                            with self._count_lock:
+                                self.packet_count += 1
+                            if proto == 'TCP':
+                                self.tcp_tracker.process_packet(pkt_data)
+
+                    time.sleep(random.uniform(0.3, 0.6))
+                except Exception as e:
+                    logger.error("Simulation loop error: %s", e)
+                    time.sleep(1)
+
+            logger.info("*** SIMULATION STOPPED (Total Packets: %d) ***", self.packet_count)
+
+        self.sniffer_thread = threading.Thread(target=simulation_loop, daemon=True)
+        self.sniffer_thread.start()
+        return True, "Simulation started successfully", self.session_id
+
+    def start_capture(self, count=0, timeout=None, interface=None, simulate=False):
         """Start packet capture on specified or default interface.
 
         Returns (success: bool, message: str, session_id: int | None).
         """
         self.last_error = None
+
+        if simulate or (interface and str(interface).lower() in ('simulate', 'simulation', 'demo')):
+            return self.start_simulation()
 
         if self.running:
             logger.warning("Capture already running.")
@@ -413,6 +573,7 @@ class CaptureManager:
             self.session_id = None
 
         self.start_time = None
+        self.simulation_mode = False
         return True, "Capture stopped successfully", session_id
 
     def get_packet_count(self):

@@ -168,7 +168,7 @@
                     <div id="capture-error-alert" class="alert alert-danger alert-dismissible fade show d-none mt-2 mb-0 py-2" role="alert" style="font-size: 0.8rem;">
                         <i class="fas fa-exclamation-triangle me-2"></i>
                         <span id="capture-error-msg">Capture failed to start</span>
-                        <button type="button" class="btn-close py-2" onclick="document.getElementById('capture-error-alert').classList.add('d-none')"></button>
+                        <button type="button" class="btn-close py-2" onclick="document.getElementById('capture-error-alert').classList.add('d-none'); fetch('/api/capture/clear-error', {method:'POST'}).catch(()=>{});"></button>
                     </div>
                 </div>
             </div>

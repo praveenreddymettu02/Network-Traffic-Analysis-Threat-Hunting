@@ -98,7 +98,7 @@ document.addEventListener('DOMContentLoaded', function() {
 
                 updateProtocolChart(data.protocol_counts || []);
                 updateTopIPs(data.top_src_ips, data.top_dst_ips);
-                updateCaptureStatus(data.is_running || false);
+                updateCaptureStatus(data.is_running || false, currentCanCapture, '', isSimulationMode);
                 updateTopTalkers();
                 
                 // 🔥 Fetch alerts separately
@@ -303,7 +303,12 @@ document.addEventListener('DOMContentLoaded', function() {
             });
     };
 
+    let userDismissedError = false;
+    let currentCanCapture = true;
+    let isSimulationMode = false;
+
     function showCaptureError(msg) {
+        if (userDismissedError) return;
         const errorAlert = document.getElementById('capture-error-alert');
         const errorMsg = document.getElementById('capture-error-msg');
         if (errorAlert && errorMsg) {
@@ -319,17 +324,33 @@ document.addEventListener('DOMContentLoaded', function() {
         }
     }
 
-    function updateCaptureStatus(isRunning, canCapture = true, message = '') {
+    // Dismiss button on capture error alert
+    document.querySelector('#capture-error-alert .btn-close')?.addEventListener('click', function() {
+        userDismissedError = true;
+        hideCaptureError();
+        fetch('/api/capture/clear-error', { method: 'POST' }).catch(() => {});
+    });
+
+    function updateCaptureStatus(isRunning, canCapture = true, message = '', simulation = false) {
         if (!captureStatusEl) return;
         if (isRunning) {
-            captureStatusEl.innerText = '🟢 Running';
-            captureStatusEl.className = 'badge-status running';
-            captureStatusEl.title = 'Live packet capture active';
+            isSimulationMode = simulation;
+            if (simulation) {
+                captureStatusEl.innerText = '🟢 Running (Simulated)';
+                captureStatusEl.className = 'badge-status running';
+                captureStatusEl.title = 'Live simulated SOC traffic active';
+            } else {
+                captureStatusEl.innerText = '🟢 Running';
+                captureStatusEl.className = 'badge-status running';
+                captureStatusEl.title = 'Live packet capture active';
+            }
         } else if (canCapture === false) {
-            captureStatusEl.innerText = '☁️ Agent/Ingest Mode';
+            isSimulationMode = false;
+            captureStatusEl.innerText = '☁️ Cloud Mode';
             captureStatusEl.className = 'badge-status stopped';
-            captureStatusEl.title = message || 'Container environment: Live raw socket sniffing restricted. Ingestion API active.';
+            captureStatusEl.title = message || 'Container environment: Live Traffic Simulator ready, or use Remote Agent.';
         } else {
+            isSimulationMode = false;
             captureStatusEl.innerText = '🔴 Stopped';
             captureStatusEl.className = 'badge-status stopped';
             captureStatusEl.title = 'Packet capture idle';
@@ -350,18 +371,23 @@ document.addEventListener('DOMContentLoaded', function() {
 
     const interfaceSelectEl = document.getElementById('interface-select');
 
-    function populateInterfaces() {
+    function populateInterfaces(canCapture = true) {
         if (!interfaceSelectEl) return;
         fetch('/api/interfaces')
             .then(res => res.json())
             .then(data => {
-                interfaceSelectEl.innerHTML = '<option value="">Auto-Detect</option>';
+                interfaceSelectEl.innerHTML = canCapture ? 
+                    '<option value="">Auto-Detect (Local Live Sniffer)</option>' :
+                    '<option value="simulate" selected>⚡ Live Traffic Simulator (Cloud / Demo)</option>';
                 data.forEach(iface => {
                     const option = document.createElement('option');
                     option.value = iface.name;
                     const ipStr = iface.ip ? ` - ${iface.ip}` : '';
                     const descStr = iface.description ? ` (${iface.description})` : '';
                     option.innerText = `${iface.type || 'Interface'}: ${iface.name}${ipStr}${descStr}`;
+                    if (!canCapture && iface.name === 'simulate') {
+                        option.selected = true;
+                    }
                     interfaceSelectEl.appendChild(option);
                 });
             })
@@ -432,14 +458,18 @@ document.addEventListener('DOMContentLoaded', function() {
 
     document.getElementById('start-capture')?.addEventListener('click', function() {
         console.log('Start button clicked!');
+        userDismissedError = false;
         hideCaptureError();
         
         const selectedInterface = interfaceSelectEl ? interfaceSelectEl.value : '';
+        const isSim = (selectedInterface === 'simulate' || currentCanCapture === false);
+        const endpoint = isSim ? '/api/simulation/start' : '/api/capture/start';
+        const payload = isSim ? {} : { interface: selectedInterface };
         
-        fetch('/api/capture/start', {
+        fetch(endpoint, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ interface: selectedInterface })
+            body: JSON.stringify(payload)
         })
         .then(async response => {
             const data = await response.json().catch(() => ({}));
@@ -453,7 +483,7 @@ document.addEventListener('DOMContentLoaded', function() {
             console.log('Start response:', data);
             hideCaptureError();
             currentSessionId = data.session_id;
-            updateCaptureStatus(true);
+            updateCaptureStatus(true, currentCanCapture, '', isSim || data.mode === 'simulation');
             
             document.dispatchEvent(new CustomEvent('captureStarted', {
                 detail: { sessionId: currentSessionId }
@@ -467,14 +497,15 @@ document.addEventListener('DOMContentLoaded', function() {
         })
         .catch(err => {
             console.error('Start error:', err);
-            updateCaptureStatus(false);
+            updateCaptureStatus(false, currentCanCapture);
             showCaptureError(err.message || 'Error starting capture');
         });
     });
 
     document.getElementById('stop-capture')?.addEventListener('click', function() {
         console.log('Stop button clicked!');
-        fetch('/api/capture/stop', {
+        const endpoint = isSimulationMode ? '/api/simulation/stop' : '/api/capture/stop';
+        fetch(endpoint, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({})
@@ -498,7 +529,10 @@ document.addEventListener('DOMContentLoaded', function() {
                 clearInterval(liveInterval);
                 liveInterval = null;
             }
-            updateCaptureStatus(false);
+            updateCaptureStatus(false, currentCanCapture);
+            fetchStats();
+            fetchRecentPackets();
+            fetchRecentAlerts();
             updateTopTalkers();
         })
         .catch(err => {
@@ -543,7 +577,8 @@ document.addEventListener('DOMContentLoaded', function() {
         fetch('/api/capture/status')
             .then(response => response.json())
             .then(data => {
-                updateCaptureStatus(data.running, data.can_capture, data.capture_message);
+                currentCanCapture = data.can_capture;
+                updateCaptureStatus(data.running, data.can_capture, data.capture_message, data.simulation);
                 if (data.running && !liveInterval) {
                     liveInterval = setInterval(fetchLiveStats, 2000);
                     fetchLiveStats();
@@ -557,7 +592,7 @@ document.addEventListener('DOMContentLoaded', function() {
                     fetchRecentAlerts();
                 }
 
-                if (data.last_error && !data.running) {
+                if (data.last_error && !data.running && !userDismissedError) {
                     showCaptureError(data.last_error);
                 }
             })
@@ -565,25 +600,28 @@ document.addEventListener('DOMContentLoaded', function() {
     }
 
     // 🔥 Initial load
-    populateInterfaces();
-    loadSystemInfo();
-    updateTopTalkers();
-
     fetch('/api/capture/status')
         .then(response => response.json())
         .then(data => {
-            updateCaptureStatus(data.running, data.can_capture, data.capture_message);
+            currentCanCapture = data.can_capture;
+            populateInterfaces(data.can_capture);
+            loadSystemInfo();
+            updateTopTalkers();
+            updateCaptureStatus(data.running, data.can_capture, data.capture_message, data.simulation);
             if (data.running) {
                 liveInterval = setInterval(fetchLiveStats, 2000);
                 fetchLiveStats();
             } else {
                 fetchStats();
             }
-            if (data.last_error && !data.running) {
+            if (data.last_error && !data.running && !userDismissedError) {
                 showCaptureError(data.last_error);
             }
         })
         .catch(() => {
+            populateInterfaces(true);
+            loadSystemInfo();
+            updateTopTalkers();
             fetchStats();
         });
 

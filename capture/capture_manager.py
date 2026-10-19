@@ -510,11 +510,8 @@ class CaptureManager:
             self.set_interface(interface)
 
         if not self.interface:
-            self.interface = self._get_default_interface()
-
-        if not self.interface:
-            logger.info("No capture interface found or selected. Falling back to live simulation.")
-            return self.start_simulation()
+            logger.info("No capture interface found or selected.")
+            return False, "No network capture interface available. Use the Remote Capture Agent to stream traffic.", None
 
         try:
             available = [self._normalize_interface(i) for i in get_if_list()]
@@ -526,8 +523,8 @@ class CaptureManager:
             r"\device\npf_"
         ) or self.interface.startswith("{")
         if is_device_name and self.interface not in available:
-            logger.info("Interface %s not in available list. Falling back to live simulation.", self.interface)
-            return self.start_simulation()
+            logger.info("Interface %s not in available list.", self.interface)
+            return False, f"Interface {self.interface} is not available.", None
 
         self.session_id = self.db.create_session()
         if not self.session_id:
@@ -594,14 +591,15 @@ class CaptureManager:
 
         if startup_error or not self.sniffer_thread.is_alive():
             err_msg = startup_error[0] if startup_error else "Capture thread failed to bind"
-            logger.warning("Sniff failed (%s). Falling back seamlessly to live traffic engine.", err_msg)
+            logger.warning("Sniff failed: %s", err_msg)
             self.running = False
             try:
                 self.db.end_session(self.session_id)
             except Exception:
                 pass
             self.session_id = None
-            return self.start_simulation()
+            self.last_error = err_msg
+            return False, err_msg, None
 
         logger.info("Sniffer thread running successfully.")
         return True, "Capture started successfully", self.session_id

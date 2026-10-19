@@ -307,18 +307,6 @@ class CaptureManager:
             for s in servers:
                 server_pool.extend([s] * s[3])
 
-            dns_domains = [
-                'www.youtube.com',
-                'nephobox.com',
-                'www.youtube.com',
-                'www.facebook.com',
-                'static.xx.fbcdn.net',
-                'assets.msn.com',
-                'th.bing.com',
-                'srtb.msn.com',
-                'gateway.facebook.com'
-            ]
-
             last_alert_time = time.time()
             sim_alert_count = 0
             alert_templates = [
@@ -362,9 +350,8 @@ class CaptureManager:
                             with self._count_lock:
                                 self.packet_count += 1
 
-                        # 2. DNS Packet (~10% probability)
+                        # 2. DNS Packet (~10% probability) - only generic stats without fake domain logs
                         elif roll < 0.22:
-                            q_domain = random.choice(dns_domains)
                             src_p = random.randint(49152, 65535)
                             is_resp = 1 if random.random() < 0.5 else 0
                             pkt_data = {
@@ -385,16 +372,6 @@ class CaptureManager:
                             self.db.insert_packet(pkt_data)
                             with self._count_lock:
                                 self.packet_count += 1
-                            
-                            self.db.insert_dns_log(
-                                domain=q_domain,
-                                src_ip=client_ip,
-                                dst_ip='8.8.8.8',
-                                query_type='A',
-                                is_response=is_resp,
-                                answers=[{'name': q_domain, 'type': 'A', 'ttl': random.randint(60, 300), 'rdata': srv_ip}],
-                                rcode=0
-                            )
 
                         # 3. UDP (QUIC / Streaming) (~38% probability)
                         elif roll < 0.60:

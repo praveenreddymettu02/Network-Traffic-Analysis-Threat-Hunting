@@ -454,9 +454,17 @@ document.addEventListener('DOMContentLoaded', function() {
         hideCaptureError();
         
         const selectedInterface = interfaceSelectEl ? interfaceSelectEl.value : '';
-        const isSim = (selectedInterface === 'simulate' || currentCanCapture === false);
-        const endpoint = isSim ? '/api/simulation/start' : '/api/capture/start';
-        const payload = isSim ? {} : { interface: selectedInterface };
+        const isSim = (selectedInterface === 'simulate');
+        let endpoint = '/api/capture/start';
+        let payload = { interface: selectedInterface };
+
+        if (isSim) {
+            endpoint = '/api/simulation/start';
+            payload = {};
+        } else if (currentCanCapture === false) {
+            endpoint = '/api/agent/session/start';
+            payload = {};
+        }
         
         fetch(endpoint, {
             method: 'POST',

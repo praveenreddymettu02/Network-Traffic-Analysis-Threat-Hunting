@@ -209,17 +209,10 @@ def live_stats():
         }), 200
     
     session_stats = db.get_session_stats(session_id) if session_id else None
-    if not session_stats or session_stats.get('total_packets', 0) == 0:
-        if total_db_packets > 0:
-            conn = db._get_connection()
-            b_res = conn.execute("SELECT SUM(length) FROM packets").fetchone()
-            total_bytes = b_res[0] if b_res and b_res[0] else 0
-            session_stats = {
-                'total_packets': total_db_packets,
-                'total_bytes': total_bytes
-            }
+    if not session_stats:
+        session_stats = {'total_packets': 0, 'total_bytes': 0}
 
-    proto_counts = db.get_protocol_counts()
+    proto_counts = db.get_protocol_counts_for_session(session_id) if session_id else db.get_protocol_counts()
     top_src = db.get_top_ips('src_ip', 5)
     top_dst = db.get_top_ips('dst_ip', 5)
     recent_packets = db.get_recent_packets(10)
@@ -352,7 +345,7 @@ def recent_alerts():
 def dns_live():
     limit = request.args.get('limit', 50, type=int)
     
-    dns_logs = db.get_dns_logs(limit, session_only=False)
+    dns_logs = db.get_dns_logs(limit, session_only=True)
     
     result = []
     for log in dns_logs:
@@ -531,6 +524,25 @@ def start_capture():
         }), 200
     except Exception as e:
         logger.error(f"Start capture error: {e}")
+        return jsonify({'status': 'error', 'message': str(e)}), 500
+
+
+@api_bp.route('/agent/session/start', methods=['POST', 'GET'])
+def start_agent_session():
+    """Create a clean new capture session for the remote Wi-Fi agent."""
+    try:
+        session_id = db.create_session()
+        db.current_session_id = session_id
+        global _last_ingest_time
+        _last_ingest_time = time.time()
+        return jsonify({
+            'status': 'started',
+            'mode': 'agent',
+            'session_id': session_id,
+            'message': 'Clean session created. Ready to ingest real browsing traffic from Wi-Fi agent.'
+        }), 200
+    except Exception as e:
+        logger.error(f"Error starting agent session: {e}")
         return jsonify({'status': 'error', 'message': str(e)}), 500
 
 
@@ -900,28 +912,6 @@ def top_talkers():
             """
             cur = conn.execute(query, (session_id, limit))
             result = [dict(row) for row in cur.fetchall()]
-
-        # If session query returned fewer than 3 records, query the most recent 5,000 packets
-        if len(result) < 3:
-            query_fallback = """
-            SELECT 
-                src_ip as ip,
-                COUNT(*) as packets,
-                SUM(length) as bytes
-            FROM (SELECT src_ip, length FROM packets ORDER BY id DESC LIMIT 5000)
-            WHERE src_ip IS NOT NULL 
-                AND src_ip != ''
-                AND src_ip != '0.0.0.0'
-                AND src_ip != '::'
-                AND src_ip != 'Unknown'
-            GROUP BY src_ip
-            ORDER BY bytes DESC
-            LIMIT ?
-            """
-            cur = conn.execute(query_fallback, (limit,))
-            fallback_res = [dict(row) for row in cur.fetchall()]
-            if fallback_res:
-                result = fallback_res
 
         return jsonify(result)
     except Exception as e:

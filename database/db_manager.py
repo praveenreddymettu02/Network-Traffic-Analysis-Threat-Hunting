@@ -649,19 +649,16 @@ class DatabaseManager:
             conn.row_factory = sqlite3.Row
             result = []
 
-            if session_only:
-                session_id = self.current_session_id or self.get_current_session_id()
-                if session_id:
-                    query = """
-                    SELECT id, session_id, timestamp, src_ip, dst_ip, domain, query_type, is_response, answer_records, ttl, rcode,
-                           datetime(timestamp, 'unixepoch', 'localtime') as time_local
-                    FROM dns_logs WHERE session_id = ? ORDER BY timestamp DESC LIMIT ?
-                    """
-                    cur = conn.execute(query, (session_id, limit))
-                    result = [dict(row) for row in cur.fetchall()]
-
-            # If session_only returned nothing or session_only is False, get latest across all sessions
-            if not result:
+            session_id = self.current_session_id or self.get_current_session_id()
+            if session_id:
+                query = """
+                SELECT id, session_id, timestamp, src_ip, dst_ip, domain, query_type, is_response, answer_records, ttl, rcode,
+                       datetime(timestamp, 'unixepoch', 'localtime') as time_local
+                FROM dns_logs WHERE session_id = ? ORDER BY timestamp DESC LIMIT ?
+                """
+                cur = conn.execute(query, (session_id, limit))
+                result = [dict(row) for row in cur.fetchall()]
+            elif not session_only:
                 query = """
                 SELECT id, session_id, timestamp, src_ip, dst_ip, domain, query_type, is_response, answer_records, ttl, rcode,
                        datetime(timestamp, 'unixepoch', 'localtime') as time_local
@@ -975,9 +972,8 @@ class DatabaseManager:
                 query = f"SELECT {column}, COUNT(*) as count FROM packets WHERE session_id = ? AND {column} IS NOT NULL AND {column} != '' AND {column} != '0.0.0.0' AND {column} != '::' GROUP BY {column} ORDER BY count DESC LIMIT ?"
                 cur = conn.execute(query, (session_id, limit))
                 result = [dict(row) for row in cur.fetchall()]
-                if result:
-                    conn.row_factory = None
-                    return result
+                conn.row_factory = None
+                return result
             query = f"SELECT {column}, COUNT(*) as count FROM packets WHERE {column} IS NOT NULL AND {column} != '' AND {column} != '0.0.0.0' AND {column} != '::' GROUP BY {column} ORDER BY count DESC LIMIT ?"
             cur = conn.execute(query, (limit,))
             result = [dict(row) for row in cur.fetchall()]
@@ -1054,9 +1050,8 @@ class DatabaseManager:
                 query = "SELECT * FROM packets WHERE session_id = ? ORDER BY timestamp DESC LIMIT ?"
                 cur = conn.execute(query, (session_id, limit))
                 result = [dict(row) for row in cur.fetchall()]
-                if result:
-                    conn.row_factory = None
-                    return result
+                conn.row_factory = None
+                return result
             query = "SELECT * FROM packets ORDER BY timestamp DESC LIMIT ?"
             cur = conn.execute(query, (limit,))
             result = [dict(row) for row in cur.fetchall()]

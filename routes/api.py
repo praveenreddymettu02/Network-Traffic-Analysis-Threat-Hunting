@@ -276,9 +276,11 @@ def live_stats():
     tcp_packets_total = tcp_val + http_val + https_val
     udp_packets_total = udp_val + dns_val
     
+    global _last_ingest_time
+    is_active_stream = capture_mgr.running or bool(_last_ingest_time and (time.time() - _last_ingest_time < 15))
     return jsonify({
         'session_id': session_id,
-        'is_running': capture_mgr.running,
+        'is_running': is_active_stream,
         'total_packets': session_stats.get('total_packets', 0) if session_stats else 0,
         'total_bytes': session_stats.get('total_bytes', 0) if session_stats else 0,
         'packets_per_second': round(pps, 2),
@@ -594,19 +596,25 @@ def stop_capture():
         return jsonify({'status': 'error', 'message': str(e)}), 500
 
 
+_last_ingest_time = 0
+
 @api_bp.route('/capture/status', methods=['GET'])
 def capture_status():
+    global _last_ingest_time
     session_id = db.get_current_session_id()
     session_stats = db.get_session_stats(session_id) if session_id else None
     can_cap, cap_reason = capture_mgr.can_capture()
+    is_ingesting = bool(_last_ingest_time and (time.time() - _last_ingest_time < 15))
+    is_active = capture_mgr.running or is_ingesting
     return jsonify({
-        'running': capture_mgr.running,
-        'simulation': getattr(capture_mgr, 'simulation_mode', False),
-        'packets_captured': capture_mgr.get_packet_count(),
+        'running': is_active,
+        'simulation': getattr(capture_mgr, 'simulation_mode', False) and not is_ingesting,
+        'ingesting': is_ingesting,
+        'packets_captured': capture_mgr.get_packet_count() if capture_mgr.running else db.get_packet_count(),
         'session_id': session_id,
         'session_stats': session_stats,
         'last_error': getattr(capture_mgr, 'last_error', None),
-        'interface': capture_mgr.interface,
+        'interface': 'Wi-Fi Live Agent' if is_ingesting else capture_mgr.interface,
         'can_capture': can_cap,
         'capture_message': cap_reason
     })
@@ -700,6 +708,8 @@ def ingest_packets():
     db.current_session_id = session_id
     ingested_count = 0
     current_time = time.time()
+    global _last_ingest_time
+    _last_ingest_time = current_time
 
     for pkt in raw_packets:
         if not isinstance(pkt, dict):

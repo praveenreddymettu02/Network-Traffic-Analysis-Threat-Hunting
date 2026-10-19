@@ -93,7 +93,37 @@ def extract_fallback_packet(packet):
 
     raw_hex = bytes(packet).hex() if hasattr(packet, '__bytes__') else None
 
-    return {
+    dns_data = None
+    if packet.haslayer('DNS'):
+        try:
+            dns = packet['DNS']
+            if hasattr(dns, 'qd') and dns.qd:
+                qname = getattr(dns.qd, 'qname', b'')
+                if isinstance(qname, bytes):
+                    qname = qname.decode('utf-8', errors='ignore').rstrip('.')
+                elif isinstance(qname, str):
+                    qname = qname.rstrip('.')
+                if qname:
+                    dns_data = {
+                        'domain': qname,
+                        'is_response': getattr(dns, 'qr', 0),
+                        'query_type': 'A'
+                    }
+        except Exception:
+            pass
+
+    tls_data = None
+    if packet.haslayer('TLS_Ext_ServerName'):
+        try:
+            sni = packet['TLS_Ext_ServerName'].servernames[0].servername
+            if isinstance(sni, bytes):
+                sni = sni.decode('utf-8', errors='ignore')
+            if sni:
+                tls_data = {'sni': str(sni)}
+        except Exception:
+            pass
+
+    res = {
         'timestamp': float(getattr(packet, 'time', time.time())),
         'src_ip': src_ip,
         'dst_ip': dst_ip,
@@ -105,6 +135,11 @@ def extract_fallback_packet(packet):
         'raw_hex': raw_hex[:2000] if raw_hex else None,
         'layers': [layer.__name__ for layer in packet.layers()] if hasattr(packet, 'layers') else []
     }
+    if dns_data:
+        res['dns'] = dns_data
+    if tls_data:
+        res['tls'] = tls_data
+    return res
 
 
 class RemoteCaptureAgent:
@@ -150,14 +185,23 @@ class RemoteCaptureAgent:
 
     def parse_packet_data(self, pkt):
         """Convert a Scapy packet into an ingestion payload."""
+        fb = extract_fallback_packet(pkt)
         if self.parser:
             try:
-                parsed = self.parser.parse_packet(pkt)
+                parsed = self.parser.parse(pkt)
                 if parsed:
+                    if 'raw' in parsed:
+                        del parsed['raw']
+                    if 'raw_data' in parsed and isinstance(parsed['raw_data'], (bytes, bytearray)):
+                        parsed['raw_data'] = parsed['raw_data'].hex()[:500]
+                    if fb.get('dns') and not parsed.get('dns'):
+                        parsed['dns'] = fb['dns']
+                    if fb.get('tls') and not parsed.get('tls'):
+                        parsed['tls'] = fb['tls']
                     return parsed
             except Exception as e:
                 logger.debug(f"Parser error, falling back: {e}")
-        return extract_fallback_packet(pkt)
+        return fb
 
     def on_packet(self, pkt):
         """Callback for incoming Scapy packet."""

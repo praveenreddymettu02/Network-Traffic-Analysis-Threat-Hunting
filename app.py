@@ -26,19 +26,6 @@ def create_app():
     except Exception as e:
         logger.error(f"Failed to start alert engine: {e}")
 
-    # Auto-seed realistic demo traffic if database is empty so dashboard is never blank (skipped during testing)
-    is_testing = app.config.get('TESTING') or ('unittest' in sys.modules) or bool(os.environ.get('TESTING'))
-    if not is_testing:
-        try:
-            from routes.api import db, alert_engine
-            if db.get_packet_count() == 0:
-                from utils.demo_generator import generate_demo_traffic
-                logger.info("Auto-seeding initial SOC traffic and alerts into database...")
-                generate_demo_traffic(db, alert_engine, count=120)
-                logger.info("Initial SOC traffic auto-seeded successfully.")
-        except Exception as e:
-            logger.warning(f"Could not auto-seed initial demo traffic: {e}")
-
     logger.info("Network Traffic Analysis App started.")
     return app
 

@@ -375,29 +375,6 @@ def dns_live():
             'rcode': log.get('rcode', 'No Error')
         })
 
-    # If no logs in database yet, provide initial baseline queries matching Image 2
-    if not result:
-        now_ts = int(time.time())
-        sample_domains = [
-            'www.youtube.com', 'nephobox.com', 'www.youtube.com',
-            'www.facebook.com', 'static.xx.fbcdn.net', 'assets.msn.com', 'th.bing.com'
-        ]
-        for i, dom in enumerate(sample_domains):
-            ts = now_ts - (i * 2)
-            result.append({
-                'id': i + 1,
-                'timestamp': ts,
-                'time_local': datetime.fromtimestamp(ts).strftime('%Y-%m-%d %H:%M:%S'),
-                'src_ip': '172.100.26.37',
-                'dst_ip': '8.8.8.8',
-                'domain': dom,
-                'query_type': 'A',
-                'is_response': 1 if i % 2 == 0 else 0,
-                'answer_records': [],
-                'ttl': 300,
-                'rcode': 'No Error'
-            })
-    
     return jsonify({
         'status': 'success',
         'count': len(result),
@@ -918,19 +895,6 @@ def top_talkers():
             fallback_res = [dict(row) for row in cur.fetchall()]
             if fallback_res:
                 result = fallback_res
-
-        # If still empty (e.g. freshly created clean database before first packet arrives),
-        # return the benchmark top talkers matching Image 2
-        if not result:
-            result = [
-                {'ip': '23.212.0.11', 'packets': 549, 'bytes': 556716},
-                {'ip': '23.53.243.77', 'packets': 432, 'bytes': 553338},
-                {'ip': '172.100.26.37', 'packets': 915, 'bytes': 411269},
-                {'ip': '43.159.94.150', 'packets': 239, 'bytes': 248350},
-                {'ip': '23.53.243.208', 'packets': 193, 'bytes': 220477},
-                {'ip': '23.53.243.211', 'packets': 126, 'bytes': 126279},
-                {'ip': '23.53.243.197', 'packets': 101, 'bytes': 117473}
-            ]
 
         return jsonify(result)
     except Exception as e:
